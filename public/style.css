@@ -1,4 +1,37 @@
 @charset "UTF-8";
+.name-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+  padding-bottom: 8px;
+}
+.name-option input {
+  accent-color: var(--accent);
+}
+.name-match {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.name-match p {
+  margin-top: 6px;
+  color: var(--ink);
+}
+.name-match a {
+  margin-left: 10px;
+}
+.name-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
 .search-scope {
   color: var(--muted);
   font-size: 12px;

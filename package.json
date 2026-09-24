@@ -14,6 +14,7 @@
     "import": "node --env-file-if-exists=.env scripts/import.js"
   },
   "dependencies": {
-    "fast-xml-parser": "^5.5.0"
+    "fast-xml-parser": "^5.5.0",
+    "opencc-js": "^1.4.2"
   }
 }

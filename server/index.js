@@ -5,6 +5,7 @@ import { createStore } from './store.js';
 import { createArchiveProvider, createTorznabProvider } from './providers.js';
 import { createSearch, searchParams } from './search.js';
 import { createApiBayProvider } from './apibay.js';
+import { createNameResolver } from './names.js';
 
 const publicDir = new URL('../public/', import.meta.url);
 const assets = {
@@ -37,7 +38,11 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
         }),
       );
   }
-  const search = createSearch(providers);
+  const search = createSearch(
+    providers,
+    120_000,
+    process.env.NAME_RESOLVER_ENABLED === 'false' ? {} : { resolveNames: createNameResolver() },
+  );
   const details = new Map();
   const detailInflight = new Map();
   const clients = new Map();

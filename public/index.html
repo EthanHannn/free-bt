@@ -64,8 +64,11 @@
           </div>
           <div id="history" class="history"></div>
         </form>
-      <p id="search-scope" class="search-scope" hidden></p>
-      <div class="filters">
+        <p id="search-scope" class="search-scope" hidden></p>
+        <label class="name-option"
+          ><input type="checkbox" id="expand-names" checked /> 自动查找中英文名称（可关闭）</label
+        >
+        <div class="filters">
           <div class="categories" role="group" aria-label="资源分类">
             <button type="button" data-category="all" aria-pressed="true">全部</button
             ><button type="button" data-category="video" aria-pressed="false">视频</button
@@ -122,6 +125,7 @@
             <h1 id="result-title">搜索结果</h1>
             <span id="result-meta"></span>
           </div>
+          <div id="name-match" class="name-match" hidden></div>
           <div id="source-status" class="source-status"></div>
           <div id="results" aria-live="polite" aria-busy="false"></div>
           <div id="pagination" class="pagination" hidden>

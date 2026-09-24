@@ -1,12 +1,7 @@
 import { fetchBytes } from './providers.js';
 import { makeMagnet, normalizeHash } from './torrent.js';
+import { matchesName } from './names.js';
 
-const normalize = (value) =>
-  String(value)
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
 const numeric = (value) =>
   value !== null &&
   value !== undefined &&
@@ -66,20 +61,17 @@ export function createApiBayProvider(fetcher = fetch) {
     kind: 'bt-index',
     description: '公开 BT 资源索引，提供磁力与来源报告的文件清单；名称以英文为主。',
     validId: (id) => /^[1-9]\d{0,11}$/.test(id),
-    async search({ q, category, page, limit, sort }) {
+    async search({ q, category, page, limit, sort, phrase = false }) {
       const cat =
         { video: '200', audio: '100', software: '300,400', books: '601', other: '600' }[category] ||
         '0';
       const rows = await read(`q.php?${new URLSearchParams({ q, cat })}`);
       if (!Array.isArray(rows)) throw new Error('BT 索引返回格式无效');
-      const tokens = normalize(q).split(' ').filter(Boolean);
       // ApiBay can ignore unsupported scripts and return trending torrents. Never treat those as matches.
       const mapped = rows.slice(0, 100).map(resource).filter(Boolean);
       const matching = mapped.filter(
         (item) =>
-          (category === 'all' || category === item.category) &&
-          tokens.length &&
-          tokens.every((token) => normalize(item.name).includes(token)),
+          (category === 'all' || category === item.category) && matchesName(item.name, q, phrase),
       );
       const unique = [...new Map(matching.map((item) => [item.hash, item])).values()];
       if (sort === 'newest')

@@ -219,7 +219,11 @@ test('aggregation keeps successful sources, merges known hashes and retries fail
       name: '本地',
       async search() {
         calls++;
-        return { items: [{ id: 'local:x', hash, sourceName: '本地' }], total: 1, hasMore: false };
+        return {
+          items: [{ id: 'local:x', hash, name: '中文', sourceName: '本地' }],
+          total: 1,
+          hasMore: false,
+        };
       },
     },
     {
@@ -227,7 +231,7 @@ test('aggregation keeps successful sources, merges known hashes and retries fail
       name: '索引器',
       async search() {
         return {
-          items: [{ id: 'torznab:x', hash, sourceName: '索引器' }],
+          items: [{ id: 'torznab:x', hash, name: '中文', sourceName: '索引器' }],
           total: 1,
           hasMore: false,
         };

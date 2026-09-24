@@ -63,7 +63,15 @@ let sources = [],
   detailRequestId = 0,
   toastTimer,
   currentDetail;
-let state = { view: 'search', q: '', category: 'all', source: 'all', sort: 'relevance', page: 1 };
+let state = {
+  view: 'search',
+  q: '',
+  category: 'all',
+  source: 'all',
+  sort: 'relevance',
+  page: 1,
+  literal: false,
+};
 
 function toast(message) {
   clearTimeout(toastTimer);
@@ -112,7 +120,7 @@ function renderSearchScope() {
   if (selected.every((source) => source.id === 'local')) {
     scope.textContent = `当前只搜索本地资源库（${selected[0].count ?? 0} 条），不会查询联网来源。`;
   } else {
-    scope.textContent = `当前搜索范围：${selected.map((source) => source.name).join('、')}。${selected.some((source) => source.kind === 'bt-index') ? '' : '当前未选择综合 BT 索引，影视资源覆盖有限。'}片名按输入文字检索，暂不自动匹配中英文别名。`;
+    scope.textContent = `当前搜索范围：${selected.map((source) => source.name).join('、')}。${selected.some((source) => source.kind === 'bt-index') ? '' : '当前未选择综合 BT 索引，影视资源覆盖有限。'}结果以名称匹配，资源覆盖取决于来源。`;
   }
 }
 function navigate(patch, replace = false) {
@@ -125,6 +133,7 @@ function navigate(patch, replace = false) {
     if (state.source !== 'all') params.set('source', state.source);
     if (state.sort !== 'relevance') params.set('sort', state.sort);
     if (state.page > 1) params.set('page', state.page);
+    if (state.literal) params.set('literal', '1');
   }
   window.history[replace ? 'replaceState' : 'pushState'](
     null,
@@ -144,6 +153,7 @@ function readUrl() {
       : 'all',
     sort: params.get('sort') === 'newest' ? 'newest' : 'relevance',
     page: Math.max(1, Math.min(100, Math.floor(Number(params.get('page')) || 1))),
+    literal: params.get('literal') === '1',
   };
   render();
 }
@@ -169,6 +179,7 @@ function render() {
   $('#query').value = state.q;
   $('#source').value = state.source;
   $('#sort').value = state.sort;
+  $('#expand-names').checked = !state.literal;
   document
     .querySelectorAll('[data-category]')
     .forEach((button) =>
@@ -197,6 +208,8 @@ async function runSearch() {
   $('#result-title').textContent = `“${state.q}” 的搜索结果`;
   $('#result-meta').textContent = '正在查询数据源…';
   $('#source-status').innerHTML = '';
+  $('#name-match').hidden = true;
+  $('#name-match').innerHTML = '';
   $('#pagination').hidden = true;
   $('#results').innerHTML =
     '<div class="loading"><span class="spinner"></span><p>正在寻找资源<span>首次连接数据源可能需要一点时间</span></p></div>';
@@ -206,6 +219,7 @@ async function runSearch() {
     source: state.source,
     sort: state.sort,
     page: state.page,
+    literal: state.literal ? '1' : '0',
   });
   try {
     const response = await fetch(`/api/search?${params}`, { signal: controller.signal });
@@ -213,10 +227,11 @@ async function runSearch() {
     if (id !== requestId) return;
     if (!response.ok && !data.sources) throw new Error(data.error || '搜索失败，请重试');
     items = data.items || [];
+    renderNaming(data.naming);
     $('#source-status').innerHTML = (data.sources || [])
       .map(
         (source) =>
-          `<span class="source-pill ${source.state === 'error' ? 'failed' : ''}" title="${escape(source.error || source.note || `本页 ${source.count} 条`)}"><span class="status-dot"></span>${escape(source.name)} · ${source.state === 'error' ? '连接失败' : `${source.count} 条`}</span>`,
+          `<span class="source-pill ${source.state !== 'ok' ? 'failed' : ''}" title="${escape(source.error || source.note || `本页 ${source.count} 条`)}"><span class="status-dot"></span>${escape(source.name)} · ${source.state === 'error' ? '连接失败' : `${source.count} 条${source.state === 'partial' ? '（部分失败）' : ''}`}</span>`,
       )
       .join('');
     if (data.partial)
@@ -240,7 +255,7 @@ async function runSearch() {
           ? empty('已响应的来源中没有找到', '还有来源连接失败，重试后可能获得更多结果。', true)
           : empty(
               '当前数据源没有匹配结果',
-              '这不代表该资源不存在。当前搜索按输入名称匹配，尚不自动关联中英文片名；结果也受数据源覆盖和筛选条件限制。',
+              '已查询的来源没有返回名称匹配的资源。可以查看本次使用的名称、调整筛选，或接入更多来源；这不代表该资源不存在。',
             );
     if (!items.length && !data.partial && !data.failed) {
       $('#results').insertAdjacentHTML(
@@ -251,7 +266,7 @@ async function runSearch() {
     if (items.length)
       $('#results').insertAdjacentHTML(
         'beforeend',
-        `<p class="results-note">${state.sort === 'newest' ? '按本页结果的发布日期排序。' : ''}各来源独立分页，已知相同 hash 的结果合并。做种状态以下载客户端为准。</p>`,
+        `<p class="results-note">${state.sort === 'newest' ? '按本页结果的发布日期排序。' : '优先显示有磁力的匹配结果。'}各来源和名称独立分页，已知相同 hash 的结果合并。做种数为来源报告，以下载客户端为准。</p>`,
       );
     $('#pagination').hidden = !items.length && !data.hasMore && state.page === 1;
     $('#prev').disabled = state.page <= 1;
@@ -275,6 +290,19 @@ function renderSaved() {
   $('#saved-results').innerHTML = saved.length
     ? saved.map(card).join('')
     : empty('把发现留在这里', '搜索后点击资源旁的星标，就能在这里快速找到它。');
+}
+function renderNaming(naming) {
+  if (!naming) return;
+  const box = $('#name-match');
+  if (naming.status === 'resolved') {
+    box.innerHTML = `<strong>名称匹配：${escape(naming.title)}</strong><p>同时搜索 ${naming.queries.map(escape).join(' / ')} <a class="text-link" href="${escape(safeWeb(naming.sourceUrl))}" target="_blank" rel="noopener noreferrer">名称依据 ↗</a></p>`;
+  } else if (naming.status === 'ambiguous' && naming.candidates?.length) {
+    box.innerHTML = `<strong>找到相近名称，尚未自动替换</strong><div class="name-choices">${naming.candidates.map((candidate) => `<button class="secondary" data-query="${escape(candidate.english || candidate.title)}">${escape(candidate.title)}${candidate.english ? ` · ${escape(candidate.english)}` : ''}</button>`).join('')}</div>`;
+  } else if (naming.status === 'unavailable') box.textContent = naming.note;
+  else if (naming.queries?.length > 1)
+    box.textContent = `同时匹配简体与繁体名称：${naming.queries.join(' / ')}`;
+  else return;
+  box.hidden = false;
 }
 function toggleSaved(item) {
   if (isSaved(item))
@@ -463,6 +491,9 @@ document.addEventListener('click', (event) => {
 });
 $('#source').addEventListener('change', () =>
   navigate({ q: $('#query').value.trim(), source: $('#source').value, page: 1 }),
+);
+$('#expand-names').addEventListener('change', () =>
+  navigate({ q: $('#query').value.trim(), literal: !$('#expand-names').checked, page: 1 }),
 );
 $('#sort').addEventListener('change', () =>
   navigate({ q: $('#query').value.trim(), sort: $('#sort').value, page: 1 }),
