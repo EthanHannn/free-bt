@@ -112,7 +112,7 @@ function renderSearchScope() {
   if (selected.every((source) => source.id === 'local')) {
     scope.textContent = `当前只搜索本地资源库（${selected[0].count ?? 0} 条），不会查询联网来源。`;
   } else {
-    scope.textContent = `当前搜索范围：${selected.map((source) => source.name).join('、')}。${selected.some((source) => source.id === 'torznab') ? '' : '尚未接入综合 BT 索引，影视资源覆盖有限。'}片名按输入文字检索，暂不自动匹配中英文别名。`;
+    scope.textContent = `当前搜索范围：${selected.map((source) => source.name).join('、')}。${selected.some((source) => source.kind === 'bt-index') ? '' : '当前未选择综合 BT 索引，影视资源覆盖有限。'}片名按输入文字检索，暂不自动匹配中英文别名。`;
   }
 }
 function navigate(patch, replace = false) {
@@ -139,7 +139,7 @@ function readUrl() {
     view: ['saved', 'sources'].includes(params.get('view')) ? params.get('view') : 'search',
     q: (params.get('q') || '').trim().slice(0, 160),
     category: Object.hasOwn(labels, params.get('category')) ? params.get('category') : 'all',
-    source: ['local', 'archive', 'torznab'].includes(params.get('source'))
+    source: /^[a-z][a-z0-9-]{0,30}$/.test(params.get('source') || '')
       ? params.get('source')
       : 'all',
     sort: params.get('sort') === 'newest' ? 'newest' : 'relevance',
@@ -349,7 +349,12 @@ async function showDetail(item) {
       origin = safeWeb(data.sourceUrl),
       torrent = safeWeb(data.torrentUrl);
     $('#detail-content').innerHTML =
-      `<h2 id="detail-title">${escape(data.name)}</h2><div class="detail-meta"><span>${escape(labels[data.category] || '其他')}</span><span>${escape(size(data.size))}</span><span>做种 ${data.seeders == null ? '未知' : escape(data.seeders)}</span></div><dl class="detail-info"><div><dt>来源</dt><dd>${escape(data.sourceName)}</dd></div><div><dt>${data.source === 'local' ? '导入时间' : '发布日期'}</dt><dd>${escape(date(data.added))}</dd></div><div><dt>Info hash</dt><dd class="mono">${escape(data.hash || '未知')}</dd></div></dl>${magnet ? `<label class="small-label" for="magnet-text">磁力链接</label><textarea id="magnet-text" readonly rows="3">${escape(magnet)}</textarea>` : ''}<div class="detail-actions">${magnet ? `<button class="primary" id="detail-copy">复制磁力</button><a class="secondary" href="${escape(magnet)}">打开客户端 ↗</a>` : ''}<button class="secondary" id="detail-save">${isSaved(data) ? '取消收藏' : '收藏资源'}</button>${origin ? `<a class="text-link" href="${escape(origin)}" target="_blank" rel="noopener noreferrer">原始页面 ↗</a>` : ''}${torrent ? `<a class="text-link" href="${escape(torrent)}" target="_blank" rel="noopener noreferrer">下载种子 ↗</a>` : ''}</div><div class="files-heading"><h3>文件清单 <span>${data.fileCount == null ? '' : escape(data.fileCount)}</span></h3>${data.files?.length ? '<label class="sr-only" for="file-query">筛选文件</label><input id="file-query" type="search" placeholder="筛选文件名">' : ''}</div><div id="file-list"></div>${data.fileCount > (data.files?.length || 0) ? '<p class="muted">文件较多，仅展示前 2,000 个。完整清单可在 BT 客户端中查看。</p>' : ''}`;
+      `<h2 id="detail-title">${escape(data.name)}</h2><div class="detail-meta"><span>${escape(labels[data.category] || '其他')}</span><span>${escape(size(data.size))}</span><span>做种 ${data.seeders == null ? '未知' : escape(data.seeders)}</span></div><dl class="detail-info"><div><dt>来源</dt><dd>${escape(data.sourceName)}</dd></div><div><dt>${data.source === 'local' ? '导入时间' : '发布日期'}</dt><dd>${escape(date(data.added))}</dd></div><div><dt>Info hash</dt><dd class="mono">${escape(data.hash || '未知')}</dd></div></dl>${magnet ? `<label class="small-label" for="magnet-text">磁力链接</label><textarea id="magnet-text" readonly rows="3">${escape(magnet)}</textarea>` : ''}<div class="detail-actions">${magnet ? `<button class="primary" id="detail-copy">复制磁力</button><a class="secondary" href="${escape(magnet)}">打开客户端 ↗</a>` : ''}<button class="secondary" id="detail-save">${isSaved(data) ? '取消收藏' : '收藏资源'}</button>${origin ? `<a class="text-link" href="${escape(origin)}" target="_blank" rel="noopener noreferrer">原始页面 ↗</a>` : ''}${torrent ? `<a class="text-link" href="${escape(torrent)}" target="_blank" rel="noopener noreferrer">下载种子 ↗</a>` : ''}</div><div class="files-heading"><h3>文件清单 <span>${data.fileCount == null ? '' : escape(data.fileCount)}</span></h3>${data.files?.length ? '<label class="sr-only" for="file-query">筛选文件</label><input id="file-query" type="search" placeholder="筛选文件名">' : ''}</div><div id="file-list"></div>${data.fileCount > 2000 && data.files?.length === 2000 ? '<p class="muted">文件较多，仅展示前 2,000 个。完整清单可在 BT 客户端中查看。</p>' : ''}`;
+    if (data.fileListSource || data.detailNote)
+      $('#file-list').insertAdjacentHTML(
+        'beforebegin',
+        `<p class="muted">${escape(data.fileListSource || data.detailNote)}</p>`,
+      );
     renderFiles('');
   } catch (error) {
     if (id !== detailRequestId || !$('#detail').open) return;
@@ -437,7 +442,8 @@ document.addEventListener('click', (event) => {
   if (target.dataset.category)
     navigate({ q: $('#query').value.trim(), category: target.dataset.category, page: 1 });
   if (target.hasAttribute('data-retry')) runSearch();
-  if (target.hasAttribute('data-reset-filters')) navigate({ category: 'all', source: 'all', page: 1 });
+  if (target.hasAttribute('data-reset-filters'))
+    navigate({ category: 'all', source: 'all', page: 1 });
   if (target.id === 'clear-history') {
     history = [];
     writeStorage('freebt.history', history);

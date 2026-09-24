@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { createStore } from './store.js';
 import { createArchiveProvider, createTorznabProvider } from './providers.js';
 import { createSearch, searchParams } from './search.js';
+import { createApiBayProvider } from './apibay.js';
 
 const publicDir = new URL('../public/', import.meta.url);
 const assets = {
@@ -25,6 +26,7 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
   ];
   if (externalProviders) providers.push(...externalProviders);
   else {
+    if (process.env.APIBAY_ENABLED !== 'false') providers.push(createApiBayProvider());
     if (process.env.ARCHIVE_ENABLED !== 'false') providers.push(createArchiveProvider());
     if (process.env.TORZNAB_URL)
       providers.push(
@@ -80,6 +82,7 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
               name: p.name,
               description: p.description,
               count: p.id === 'local' ? store.count() : null,
+              kind: p.kind || (p.id === 'torznab' ? 'bt-index' : p.id),
             })),
             torznabConfigured: providers.some((p) => p.id === 'torznab'),
           });
@@ -100,14 +103,18 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
         }
         if (url.pathname === '/api/resource') {
           const id = url.searchParams.get('id') || '';
-          if (
-            !/^(local|torznab):[a-f\d]{40}$/.test(id) &&
-            !/^archive:[a-zA-Z0-9_.-]{1,200}$/.test(id)
-          )
+          if (!/^[a-z][a-z0-9-]{0,30}:[a-zA-Z0-9_.-]{1,200}$/.test(id))
             return json(res, 400, { error: '资源编号无效' });
           const split = id.indexOf(':');
           const provider = providers.find((p) => p.id === id.slice(0, split));
           if (!provider) return json(res, 404, { error: '数据源未启用' });
+          const resourceId = id.slice(split + 1);
+          const validId =
+            provider.validId ||
+            (provider.id === 'archive'
+              ? (value) => /^[a-zA-Z0-9_.-]{1,200}$/.test(value)
+              : (value) => /^[a-f\d]{40}$/.test(value));
+          if (!validId(resourceId)) return json(res, 400, { error: '资源编号无效' });
           let detail = details.get(id);
           if (!detail || detail.expires <= Date.now()) {
             let promise = detailInflight.get(id);

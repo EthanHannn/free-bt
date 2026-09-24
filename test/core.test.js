@@ -109,7 +109,7 @@ test('query validation bounds expensive queries and uses literal categories', ()
     'q=x&page=-1',
     'q=x&page=101',
     'q=x&category=toString',
-    'q=x&source=unknown',
+    'q=x&source=../unknown',
     'q=x&sort=invalid',
     `q=${'x'.repeat(161)}`,
   ])

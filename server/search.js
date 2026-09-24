@@ -10,7 +10,7 @@ export function searchParams(params) {
   if (
     !Object.hasOwn(categories, category) ||
     !['relevance', 'newest'].includes(sort) ||
-    !['all', 'local', 'archive', 'torznab'].includes(source)
+    !/^[a-z][a-z0-9-]{0,30}$/.test(source)
   )
     throw new Error('筛选条件无效');
   if (!Number.isInteger(page) || page < 1 || page > 100) throw new Error('页码需要在 1–100 之间');
