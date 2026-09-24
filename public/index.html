@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#3454d1" />
+    <meta
+      name="description"
+      content="自由 BT：轻巧的个人磁力资源搜索，聚合数据源，查看文件，一键复制磁力。"
+    />
+    <title>自由 BT · 找到，再出发</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到主要内容</a>
+    <header class="header">
+      <a href="/" class="brand" aria-label="自由 BT 首页"
+        ><img src="/favicon.svg" alt="" width="35" height="35" /><span
+          >自由 <strong>BT</strong></span
+        ><span class="edition">个人版</span></a
+      >
+      <nav aria-label="主导航">
+        <a href="/" data-view="search" class="nav-link">搜索</a>
+        <a href="/?view=saved" data-view="saved" class="nav-link"
+          >收藏<span id="saved-count" class="count">0</span></a
+        >
+        <a href="/?view=sources" data-view="sources" class="nav-link">数据源</a>
+      </nav>
+      <button id="theme" class="icon-button" aria-label="切换深色模式" title="切换深色模式">
+        ◐
+      </button>
+    </header>
+    <main id="main" tabindex="-1">
+      <section id="search-view">
+        <div class="search-intro" id="intro">
+          <p class="eyebrow"><span class="mini-mark"></span> 少一点寻找，多一点发现</p>
+          <h1>想找的，<span>直接搜。</span></h1>
+          <p class="intro-text">从一个关键词，到一个磁力链接。</p>
+        </div>
+        <form id="search-form" role="search" class="search-form">
+          <div class="search-box">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m16 16 5 5" /></svg
+            ><label class="sr-only" for="query">搜索资源</label
+            ><input
+              id="query"
+              name="q"
+              type="search"
+              placeholder="资源名称、关键词或 info hash"
+              maxlength="160"
+              autocomplete="off"
+              required
+            /><kbd>/</kbd
+            ><button class="primary" type="submit">搜索 <span aria-hidden="true">↗</span></button>
+          </div>
+          <div id="history" class="history"></div>
+        </form>
+        <div class="filters">
+          <div class="categories" role="group" aria-label="资源分类">
+            <button type="button" data-category="all" aria-pressed="true">全部</button
+            ><button type="button" data-category="video" aria-pressed="false">视频</button
+            ><button type="button" data-category="audio" aria-pressed="false">音频</button
+            ><button type="button" data-category="books" aria-pressed="false">书籍</button
+            ><button type="button" data-category="software" aria-pressed="false">软件</button
+            ><button type="button" data-category="other" aria-pressed="false">其他</button>
+          </div>
+          <div class="selects">
+            <label for="source">来源</label
+            ><select id="source">
+              <option value="all">所有数据源</option></select
+            ><label class="sr-only" for="sort">排序</label
+            ><select id="sort">
+              <option value="relevance">默认排序</option>
+              <option value="newest">最新发布</option>
+            </select>
+          </div>
+        </div>
+        <section id="welcome" class="welcome">
+          <div class="welcome-heading">
+            <h2>从这里开始</h2>
+            <span>试试这些关键词</span>
+          </div>
+          <div class="suggestions">
+            <button data-query="Big Buck Bunny">
+              <span class="suggestion-icon">▷</span
+              ><span><strong>Big Buck Bunny</strong><small>开源动画 · 视频</small></span
+              ><span class="arrow">↗</span></button
+            ><button data-query="Linux">
+              <span class="suggestion-icon">⌘</span
+              ><span><strong>Linux</strong><small>自由软件 · 系统镜像</small></span
+              ><span class="arrow">↗</span></button
+            ><button data-query="历史">
+              <span class="suggestion-icon">▤</span
+              ><span><strong>历史</strong><small>中文关键词 · 书籍与影像</small></span
+              ><span class="arrow">↗</span>
+            </button>
+          </div>
+          <div class="home-bottom">
+            <div>
+              <span class="small-label">你的搜索工作台</span>
+              <h3>只留下有用的信息。</h3>
+              <p>看清文件，再开始下载。收藏值得保留的资源，<br />下次回来，接着找。</p>
+              <a href="/?view=sources" class="text-link"
+                >查看已接入的数据源 <span aria-hidden="true">→</span></a
+              >
+            </div>
+            <div class="source-preview" id="source-preview"><p>正在读取数据源…</p></div>
+          </div>
+        </section>
+        <section id="results-section" hidden aria-label="搜索结果">
+          <div class="results-heading">
+            <h1 id="result-title">搜索结果</h1>
+            <span id="result-meta"></span>
+          </div>
+          <div id="source-status" class="source-status"></div>
+          <div id="results" aria-live="polite" aria-busy="false"></div>
+          <div id="pagination" class="pagination" hidden>
+            <button id="prev" class="secondary">← 上一页</button><span id="page-number"></span
+            ><button id="next" class="secondary">下一页 →</button>
+          </div>
+        </section>
+      </section>
+      <section id="saved-view" class="secondary-view" hidden>
+        <p class="eyebrow">留给下次的发现</p>
+        <h1>我的收藏<span class="title-dot">.</span></h1>
+        <p class="muted">仅保存在当前浏览器，随时回来继续找。</p>
+        <div id="saved-results" class="saved-results"></div>
+      </section>
+      <section id="sources-view" class="secondary-view" hidden>
+        <p class="eyebrow">搜索从哪里来</p>
+        <h1>数据源<span class="title-dot">.</span></h1>
+        <p class="muted">一个入口，连接不同的资源库。搜索时分别显示每个来源的响应情况。</p>
+        <div id="source-cards" class="source-cards"></div>
+        <div class="setup-note">
+          <h2>扩展你的资源范围</h2>
+          <p>
+            接入 Prowlarr 或 Jackett 后，可以搜索其中配置的索引器。当前未配置的来源不会参与搜索。
+          </p>
+          <p>
+            在服务器的 <code>.env</code> 中填写 <code>TORZNAB_URL</code> 和
+            <code>TORZNAB_API_KEY</code>，重启服务后生效。API Key 只留在服务器。
+          </p>
+          <h3>已有磁力或种子？</h3>
+          <p>
+            使用 <code>npm run import -- 文件路径</code> 导入 <code>.torrent</code>、磁力文本或 JSON
+            文件，即可在本地资源库搜索。导入后重启服务可立即清除搜索缓存。
+          </p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <span>自由 BT <span class="footer-slash">/</span> 找到，再出发</span
+      ><span>搜索索引 · 使用 BT 客户端下载</span>
+    </footer>
+    <dialog id="detail" aria-labelledby="detail-title">
+      <div class="dialog-top">
+        <span class="small-label">资源详情</span
+        ><button id="close-detail" class="icon-button" aria-label="关闭详情">✕</button>
+      </div>
+      <div id="detail-content"></div>
+    </dialog>
+    <div id="toast" role="status" class="toast" hidden></div>
+    <noscript>请启用 JavaScript 后使用搜索。</noscript>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+services:
+  free-bt:
+    build: .
+    ports:
+      - '127.0.0.1:3210:3210'
+    environment:
+      HOST: 0.0.0.0
+      ARCHIVE_ENABLED: ${ARCHIVE_ENABLED:-true}
+      TORZNAB_URL: ${TORZNAB_URL:-}
+      TORZNAB_API_KEY: ${TORZNAB_API_KEY:-}
+      TORZNAB_NAME: ${TORZNAB_NAME:-我的索引器}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1}
+    volumes:
+      - free-bt-data:/app/data
+    restart: unless-stopped
+volumes:
+  free-bt-data:

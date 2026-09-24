@@ -1,0 +1,19 @@
+{
+  "name": "free-bt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.5.0"
+  },
+  "scripts": {
+    "start": "node --use-env-proxy --env-file-if-exists=.env server/index.js",
+    "dev": "node --watch --use-env-proxy --env-file-if-exists=.env server/index.js",
+    "test": "node --test",
+    "check": "node --check server/index.js && node --check public/app.js",
+    "import": "node --env-file-if-exists=.env scripts/import.js"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.5.0"
+  }
+}
