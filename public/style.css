@@ -1,4 +1,17 @@
 @charset "UTF-8";
+.search-scope {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+  padding: 12px 0;
+}
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 32px;
+}
 :root {
   color-scheme: light;
   --bg: #f6f8fc;

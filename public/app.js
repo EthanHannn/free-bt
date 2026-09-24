@@ -104,6 +104,17 @@ function renderHistory() {
 function updateSavedCount() {
   $('#saved-count').textContent = saved.length;
 }
+function renderSearchScope() {
+  const selected = sources.filter((source) => state.source === 'all' || source.id === state.source);
+  const scope = $('#search-scope');
+  scope.hidden = !selected.length;
+  if (!selected.length) return;
+  if (selected.every((source) => source.id === 'local')) {
+    scope.textContent = `当前只搜索本地资源库（${selected[0].count ?? 0} 条），不会查询联网来源。`;
+  } else {
+    scope.textContent = `当前搜索范围：${selected.map((source) => source.name).join('、')}。${selected.some((source) => source.id === 'torznab') ? '' : '尚未接入综合 BT 索引，影视资源覆盖有限。'}片名按输入文字检索，暂不自动匹配中英文别名。`;
+  }
+}
 function navigate(patch, replace = false) {
   state = { ...state, ...patch };
   const params = new URLSearchParams();
@@ -167,6 +178,7 @@ function render() {
   $('#welcome').hidden = Boolean(state.q);
   $('#results-section').hidden = !state.q;
   $('#search-view').classList.toggle('has-query', Boolean(state.q));
+  renderSearchScope();
   renderHistory();
   if (state.q) runSearch();
 }
@@ -227,9 +239,15 @@ async function runSearch() {
         : data.partial
           ? empty('已响应的来源中没有找到', '还有来源连接失败，重试后可能获得更多结果。', true)
           : empty(
-              '换个关键词试试',
-              '缩短名称、去掉版本号，或切换分类和数据源。资源范围取决于已接入的来源。',
+              '当前数据源没有匹配结果',
+              '这不代表该资源不存在。当前搜索按输入名称匹配，尚不自动关联中英文片名；结果也受数据源覆盖和筛选条件限制。',
             );
+    if (!items.length && !data.partial && !data.failed) {
+      $('#results').insertAdjacentHTML(
+        'beforeend',
+        `<div class="empty-actions">${state.category !== 'all' || state.source !== 'all' ? '<button class="secondary" data-reset-filters>清除分类与来源筛选</button>' : ''}<a class="secondary" href="/?view=sources">查看搜索范围与数据源</a></div>`,
+      );
+    }
     if (items.length)
       $('#results').insertAdjacentHTML(
         'beforeend',
@@ -369,6 +387,7 @@ async function loadSources() {
     if (!response.ok) throw new Error();
     const data = await response.json();
     sources = data.sources;
+    renderSearchScope();
     $('#source').innerHTML =
       '<option value="all">所有数据源</option>' +
       sources.map((s) => `<option value="${escape(s.id)}">${escape(s.name)}</option>`).join('');
@@ -418,6 +437,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.category)
     navigate({ q: $('#query').value.trim(), category: target.dataset.category, page: 1 });
   if (target.hasAttribute('data-retry')) runSearch();
+  if (target.hasAttribute('data-reset-filters')) navigate({ category: 'all', source: 'all', page: 1 });
   if (target.id === 'clear-history') {
     history = [];
     writeStorage('freebt.history', history);
