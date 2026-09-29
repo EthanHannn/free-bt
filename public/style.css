@@ -612,6 +612,7 @@ footer {
 }
 .result-card {
   display: flex;
+  flex-wrap: wrap;
   gap: 18px;
   align-items: center;
   background: var(--surface);
@@ -907,40 +908,10 @@ footer {
   overflow-wrap: anywhere;
   color: var(--ink);
 }
-dialog {
-  border: 1px solid var(--line);
-  border-radius: 17px;
-  background: var(--surface);
-  color: var(--ink);
-  padding: 24px 30px 30px;
-  max-width: 740px;
-  width: calc(100% - 32px);
-  max-height: 88dvh;
-  box-shadow: 0 30px 90px #101e4340;
-}
-dialog::backdrop {
-  background: #14234480;
-  backdrop-filter: blur(4px);
-}
-.dialog-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-#detail-title {
-  font-size: 23px;
-  font-weight: 600;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.detail-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 13px;
+.card-detail {
+  flex-basis: 100%;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
 }
 .detail-info {
   margin: 24px 0;
@@ -968,7 +939,7 @@ dialog::backdrop {
   font-family: var(--mono);
   font-size: 11px;
 }
-#magnet-text {
+.card-magnet {
   width: 100%;
   resize: vertical;
   background: var(--bg);
@@ -1056,9 +1027,6 @@ dialog::backdrop {
   box-shadow: var(--shadow);
   max-width: calc(100% - 32px);
   width: max-content;
-}
-body:has(dialog[open]) {
-  overflow: hidden;
 }
 @media (min-width: 1500px) {
   .search-intro {
@@ -1355,17 +1323,6 @@ body:has(dialog[open]) {
   }
   .loading p > span {
     font-size: 10px;
-  }
-  dialog {
-    padding: 17px 19px 23px;
-    max-height: 90dvh;
-  }
-  #detail-title {
-    font-size: 19px;
-  }
-  .detail-meta {
-    font-size: 11px;
-    gap: 14px;
   }
   .detail-info {
     font-size: 11px;

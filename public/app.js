@@ -60,9 +60,8 @@ let sources = [],
   items = [],
   controller,
   requestId = 0,
-  detailRequestId = 0,
-  toastTimer,
-  currentDetail;
+  toastTimer;
+const expanded = new Map();
 let state = {
   view: 'search',
   q: '',
@@ -340,10 +339,6 @@ function toggleSaved(item) {
         const resource = items.find((i) => i.id === element.dataset.id);
         if (resource) element.outerHTML = card(resource);
       });
-  if (currentDetail) {
-    const button = $('#detail-save');
-    if (button) button.textContent = isSaved(currentDetail) ? '取消收藏' : '收藏资源';
-  }
 }
 async function resolveResource(item) {
   const response = await fetch(`/api/resource?${new URLSearchParams({ id: item.id })}`);
@@ -371,8 +366,9 @@ async function copyResource(item, button) {
       await navigator.clipboard.writeText(magnet);
       toast('磁力已复制，粘贴到 BT 客户端即可下载');
     } catch {
-      await showDetail(resource);
-      toast('浏览器未允许复制，请在详情中手动复制磁力');
+      const cardEl = button.closest('.result-card');
+      if (cardEl && !cardEl.querySelector('.card-detail')) await toggleDetail(resource, cardEl);
+      toast('浏览器未允许复制，请展开资源手动复制磁力');
     }
   } catch (error) {
     toast(error.message);
@@ -402,42 +398,62 @@ async function pushResource(item, button) {
     button.textContent = text;
   }
 }
-async function showDetail(item) {
-  const id = ++detailRequestId;
-  currentDetail = item;
-  if (!$('#detail').open) $('#detail').showModal();
-  $('#detail-content').innerHTML =
-    `<h2 id="detail-title">${escape(item.name)}</h2><div class="loading"><span class="spinner"></span><p>正在读取种子信息…</p></div>`;
+function detailHtml(data) {
+  const magnet = safeMagnet(data.magnet),
+    origin = safeWeb(data.sourceUrl),
+    torrent = safeWeb(data.torrentUrl);
+  return (
+    `<dl class="detail-info"><div><dt>来源</dt><dd>${escape(data.sourceName)}</dd></div><div><dt>${data.source === 'local' ? '导入时间' : '发布日期'}</dt><dd>${escape(date(data.added))}</dd></div><div><dt>Info hash</dt><dd class="mono">${escape(data.hash || '未知')}</dd></div></dl>` +
+    (magnet
+      ? `<label class="small-label">磁力链接</label><textarea class="card-magnet" readonly rows="2" aria-label="磁力链接">${escape(magnet)}</textarea>`
+      : '') +
+    `<div class="detail-actions">${magnet ? `<button class="secondary" data-action="copy">复制磁力</button><button class="secondary push-button" data-action="push">推送下载</button><a class="secondary" href="${escape(magnet)}">打开客户端 ↗</a>` : ''}${origin ? `<a class="text-link" href="${escape(origin)}" target="_blank" rel="noopener noreferrer">原始页面 ↗</a>` : ''}${torrent ? `<a class="text-link" href="${escape(torrent)}" target="_blank" rel="noopener noreferrer">下载种子 ↗</a>` : ''}</div>` +
+    `<div class="files-heading"><h3>文件清单 <span>${data.fileCount == null ? '' : escape(data.fileCount)}</span></h3>${data.files?.length ? '<input class="file-query" type="search" placeholder="筛选文件名" aria-label="筛选文件">' : ''}</div>` +
+    (data.fileListSource || data.detailNote
+      ? `<p class="muted">${escape(data.fileListSource || data.detailNote)}</p>`
+      : '') +
+    `<div class="file-list-box"></div>` +
+    (data.fileCount > 2000 && data.files?.length === 2000
+      ? '<p class="muted">文件较多，仅展示前 2,000 个。完整清单可在 BT 客户端中查看。</p>'
+      : '')
+  );
+}
+async function toggleDetail(item, cardEl) {
+  const existing = cardEl.querySelector('.card-detail');
+  if (existing) {
+    expanded.delete(cardEl);
+    existing.remove();
+    return;
+  }
+  const box = document.createElement('div');
+  box.className = 'card-detail';
+  box.innerHTML =
+    '<div class="loading"><span class="spinner"></span><p>正在读取种子信息…</p></div>';
+  cardEl.append(box);
   try {
     const data = item.files ? item : await resolveResource(item);
-    if (id !== detailRequestId || !$('#detail').open) return;
-    currentDetail = data;
-    const magnet = safeMagnet(data.magnet),
-      origin = safeWeb(data.sourceUrl),
-      torrent = safeWeb(data.torrentUrl);
-    $('#detail-content').innerHTML =
-      `<h2 id="detail-title">${escape(data.name)}</h2><div class="detail-meta"><span>${escape(labels[data.category] || '其他')}</span><span>${escape(size(data.size))}</span><span>做种 ${data.seeders == null ? '未知' : escape(data.seeders)}</span></div><dl class="detail-info"><div><dt>来源</dt><dd>${escape(data.sourceName)}</dd></div><div><dt>${data.source === 'local' ? '导入时间' : '发布日期'}</dt><dd>${escape(date(data.added))}</dd></div><div><dt>Info hash</dt><dd class="mono">${escape(data.hash || '未知')}</dd></div></dl>${magnet ? `<label class="small-label" for="magnet-text">磁力链接</label><textarea id="magnet-text" readonly rows="3">${escape(magnet)}</textarea>` : ''}<div class="detail-actions">${magnet ? `<button class="primary" id="detail-copy">复制磁力</button><button class="secondary push-button" id="detail-push">推送下载</button><a class="secondary" href="${escape(magnet)}">打开客户端 ↗</a>` : ''}<button class="secondary" id="detail-save">${isSaved(data) ? '取消收藏' : '收藏资源'}</button>${origin ? `<a class="text-link" href="${escape(origin)}" target="_blank" rel="noopener noreferrer">原始页面 ↗</a>` : ''}${torrent ? `<a class="text-link" href="${escape(torrent)}" target="_blank" rel="noopener noreferrer">下载种子 ↗</a>` : ''}</div><div class="files-heading"><h3>文件清单 <span>${data.fileCount == null ? '' : escape(data.fileCount)}</span></h3>${data.files?.length ? '<label class="sr-only" for="file-query">筛选文件</label><input id="file-query" type="search" placeholder="筛选文件名">' : ''}</div><div id="file-list"></div>${data.fileCount > 2000 && data.files?.length === 2000 ? '<p class="muted">文件较多，仅展示前 2,000 个。完整清单可在 BT 客户端中查看。</p>' : ''}`;
-    if (data.fileListSource || data.detailNote)
-      $('#file-list').insertAdjacentHTML(
-        'beforebegin',
-        `<p class="muted">${escape(data.fileListSource || data.detailNote)}</p>`,
-      );
-    renderFiles('');
+    if (!box.isConnected) return;
+    cardEl.dataset.id = data.id;
+    expanded.set(cardEl, data);
+    box.innerHTML = detailHtml(data);
+    renderFiles('', cardEl);
   } catch (error) {
-    if (id !== detailRequestId || !$('#detail').open) return;
+    if (!box.isConnected) return;
     const origin = safeWeb(item.sourceUrl);
-    $('#detail-content').innerHTML =
-      `<h2 id="detail-title">${escape(item.name)}</h2>${empty('详情暂时不可用', error.message)}<button class="secondary" id="detail-retry">重试</button>${origin ? `<a class="text-link" href="${escape(origin)}" target="_blank" rel="noopener noreferrer">访问原始页面 ↗</a>` : ''}`;
+    box.innerHTML =
+      `${empty('详情暂时不可用', error.message)}<button class="secondary" data-action="detail-retry">重试</button>${origin ? `<a class="text-link" href="${escape(origin)}" target="_blank" rel="noopener noreferrer">访问原始页面 ↗</a>` : ''}`;
   }
 }
-function renderFiles(query) {
-  const files = currentDetail?.files;
+function renderFiles(query, cardEl) {
+  const box = cardEl?.querySelector('.file-list-box');
+  if (!box) return;
+  const files = expanded.get(cardEl)?.files;
   if (!files?.length) {
-    $('#file-list').innerHTML = '<p class="muted">来源未提供文件清单，可在 BT 客户端中查看。</p>';
+    box.innerHTML = '<p class="muted">来源未提供文件清单，可在 BT 客户端中查看。</p>';
     return;
   }
   const filtered = files.filter((file) => file.name.toLowerCase().includes(query.toLowerCase()));
-  $('#file-list').innerHTML = filtered.length
+  box.innerHTML = filtered.length
     ? `<ul class="file-list">${filtered.map((file) => `<li><span>${escape(file.name)}</span><span>${escape(size(file.size))}</span></li>`).join('')}</ul>`
     : '<p class="muted">没有匹配的文件。</p>';
 }
@@ -518,18 +534,18 @@ document.addEventListener('click', (event) => {
     renderHistory();
   }
   if (target.dataset.action) {
-    const itemId = target.closest('[data-id]').dataset.id;
-    const item = (state.view === 'saved' ? saved : items).find((i) => i.id === itemId);
+    const cardEl = target.closest('[data-id]');
+    const item = (state.view === 'saved' ? saved : items).find((i) => i.id === cardEl.dataset.id);
     if (!item) return;
     if (target.dataset.action === 'save') toggleSaved(item);
     if (target.dataset.action === 'copy') copyResource(item, target);
     if (target.dataset.action === 'push') pushResource(item, target);
-    if (target.dataset.action === 'detail') showDetail(item);
+    if (target.dataset.action === 'detail') toggleDetail(item, cardEl);
+    if (target.dataset.action === 'detail-retry') {
+      cardEl.querySelector('.card-detail')?.remove();
+      toggleDetail(item, cardEl);
+    }
   }
-  if (target.id === 'detail-copy') copyResource(currentDetail, target);
-  if (target.id === 'detail-push') pushResource(currentDetail, target);
-  if (target.id === 'detail-save') toggleSaved(currentDetail);
-  if (target.id === 'detail-retry') showDetail(currentDetail);
 });
 $('#source').addEventListener('change', () =>
   navigate({ q: $('#query').value.trim(), source: $('#source').value, page: 1 }),
@@ -559,25 +575,11 @@ $('#next').addEventListener('click', () => {
   navigate({ page: state.page + 1 });
   $('#search-form').scrollIntoView({ block: 'start' });
 });
-$('#close-detail').addEventListener('click', () => $('#detail').close());
-$('#detail').addEventListener('close', () => {
-  detailRequestId++;
-  currentDetail = null;
-});
-$('#detail').addEventListener('click', (event) => {
-  if (event.target === $('#detail')) {
-    const rect = $('#detail').getBoundingClientRect();
-    if (
-      event.clientX < rect.left ||
-      event.clientX > rect.right ||
-      event.clientY < rect.top ||
-      event.clientY > rect.bottom
-    )
-      $('#detail').close();
+document.addEventListener('input', (event) => {
+  if (event.target.classList.contains('file-query')) {
+    const cardEl = event.target.closest('.result-card');
+    if (cardEl) renderFiles(event.target.value, cardEl);
   }
-});
-$('#detail').addEventListener('input', (event) => {
-  if (event.target.id === 'file-query') renderFiles(event.target.value);
 });
 document.addEventListener('keydown', (event) => {
   if (
@@ -585,8 +587,7 @@ document.addEventListener('keydown', (event) => {
     !event.ctrlKey &&
     !event.metaKey &&
     !event.altKey &&
-    !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) &&
-    !$('#detail').open
+    !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)
   ) {
     event.preventDefault();
     if (state.view !== 'search') navigate({ view: 'search' });
