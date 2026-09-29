@@ -1,5 +1,6 @@
 import { categories } from './store.js';
 import { basicNames, matchesName } from './names.js';
+import { isJunkName } from './junk.js';
 
 export function searchParams(params) {
   const q = (params.get('q') || '').normalize('NFKC').trim();
@@ -15,7 +16,7 @@ export function searchParams(params) {
   )
     throw new Error('筛选条件无效');
   if (!Number.isInteger(page) || page < 1 || page > 100) throw new Error('页码需要在 1–100 之间');
-  return { q, category, sort, source, page, limit: 20, literal: params.get('literal') === '1' };
+  return { q, category, sort, source, page, limit: 20, literal: params.get('literal') === '1', junk: params.get('junk') === '1' };
 }
 
 export function createSearch(
@@ -112,7 +113,7 @@ export function createSearch(
           note,
         };
       });
-      const items = [...unique.values()];
+      let items = [...unique.values()];
       if (query.sort === 'newest')
         items.sort((a, b) => (Date.parse(b.added) || 0) - (Date.parse(a.added) || 0));
       else {
@@ -128,6 +129,13 @@ export function createSearch(
             (b.seeders ?? -1) - (a.seeders ?? -1),
         );
       }
+      // Optional junk filter (off by default, toggled in the UI).
+      let junkHidden = 0;
+      if (query.junk) {
+        const kept = items.filter((item) => !isJunkName(item.name));
+        junkHidden = items.length - kept.length;
+        items = kept;
+      }
       const value = {
         items,
         sources,
@@ -136,6 +144,7 @@ export function createSearch(
         hasMore: sources.some((s) => s.hasMore) && query.page < 100,
         failed: sources.every((s) => s.state === 'error'),
         partial: sources.some((s) => s.state !== 'ok'),
+        junkHidden: junkHidden || undefined,
         elapsed: Math.round(performance.now() - start),
         cached: false,
       };

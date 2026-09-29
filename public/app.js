@@ -71,6 +71,7 @@ let state = {
   sort: 'relevance',
   page: 1,
   literal: false,
+  junk: readStorage('freebt.junkFilter', false) === true,
 };
 
 function toast(message) {
@@ -154,6 +155,7 @@ function readUrl() {
     sort: params.get('sort') === 'newest' ? 'newest' : 'relevance',
     page: Math.max(1, Math.min(100, Math.floor(Number(params.get('page')) || 1))),
     literal: params.get('literal') === '1',
+    junk: state.junk,
   };
   render();
 }
@@ -180,6 +182,7 @@ function render() {
   $('#source').value = state.source;
   $('#sort').value = state.sort;
   $('#expand-names').checked = !state.literal;
+  $('#filter-junk').checked = state.junk;
   document
     .querySelectorAll('[data-category]')
     .forEach((button) =>
@@ -221,6 +224,7 @@ async function runSearch() {
     page: state.page,
     literal: state.literal ? '1' : '0',
   });
+  if (state.junk) params.set('junk', '1');
   try {
     const response = await fetch(`/api/search?${params}`, { signal: controller.signal });
     const data = await response.json();
@@ -246,7 +250,8 @@ async function runSearch() {
           `<p class="source-note">${escape(source.name)}：${escape(source.note)}</p>`,
         );
     $('#result-meta').textContent =
-      `本页 ${items.length} 条 · ${data.cached ? '缓存结果' : `${(data.elapsed / 1000).toFixed(1)} 秒`}`;
+      `本页 ${items.length} 条 · ${data.cached ? '缓存结果' : `${(data.elapsed / 1000).toFixed(1)} 秒`}` +
+      (data.junkHidden ? ` · 已隐藏 ${data.junkHidden} 条疑似推广` : '');
     $('#results').innerHTML = items.length
       ? items.map(card).join('')
       : data.failed
@@ -495,6 +500,11 @@ $('#source').addEventListener('change', () =>
 $('#expand-names').addEventListener('change', () =>
   navigate({ q: $('#query').value.trim(), literal: !$('#expand-names').checked, page: 1 }),
 );
+$('#filter-junk').addEventListener('change', () => {
+  state = { ...state, junk: $('#filter-junk').checked };
+  writeStorage('freebt.junkFilter', state.junk);
+  if (state.q) runSearch();
+});
 $('#sort').addEventListener('change', () =>
   navigate({ q: $('#query').value.trim(), sort: $('#sort').value, page: 1 }),
 );
