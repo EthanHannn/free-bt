@@ -190,7 +190,11 @@ export function createTorznabProvider({ url, key, name = '我的索引器', fetc
         other: '8000',
       };
       if (cats[category]) target.searchParams.set('cat', cats[category]);
-      const xml = (await fetchBytes(target, { fetcher })).toString();
+      // Jackett/Prowlarr aggregates can take tens of seconds on a cold cache; stay
+      // within the server's 30s request budget and let a retry hit the warm cache.
+      const xml = (
+        await fetchBytes(target, { fetcher, timeout: 25000 })
+      ).toString();
       if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error('索引器返回了不支持的 XML');
       const data = new XMLParser({
         ignoreAttributes: false,

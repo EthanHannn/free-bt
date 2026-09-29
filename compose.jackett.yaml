@@ -20,5 +20,10 @@ services:
     volumes:
       - jackett-config:/config
     restart: unless-stopped
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    ports:
+      - '127.0.0.1:8191:8191'
+    restart: unless-stopped
 volumes:
   jackett-config:
