@@ -11,7 +11,9 @@
     "dev": "node --watch --use-env-proxy --env-file-if-exists=.env server/index.js",
     "test": "node --test",
     "check": "node --check server/index.js && node --check public/app.js",
-    "import": "node --env-file-if-exists=.env scripts/import.js"
+    "import": "node --env-file-if-exists=.env scripts/import.js",
+    "refresh-trackers": "node --env-file-if-exists=.env scripts/refresh-trackers.js",
+    "probe-indexers": "node --use-env-proxy --env-file-if-exists=.env scripts/probe-indexers.js"
   },
   "dependencies": {
     "fast-xml-parser": "^5.5.0",

@@ -6,6 +6,7 @@ import { createArchiveProvider, createTorznabProvider } from './providers.js';
 import { createSearch, searchParams } from './search.js';
 import { createApiBayProvider } from './apibay.js';
 import { chainResolvers, createNameResolver, createTmdbResolver } from './names.js';
+import { createTrackers } from './trackers.js';
 
 const publicDir = new URL('../public/', import.meta.url);
 const assets = {
@@ -55,6 +56,16 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
   const details = new Map();
   const detailInflight = new Map();
   const clients = new Map();
+  const dataDir = process.env.DATA_DIR || './data';
+  const trackers =
+    process.env.TRACKERS_ENABLED === 'false'
+      ? { enrich: (magnet) => magnet, refreshIfStale: async () => false }
+      : createTrackers({
+          file: `${dataDir}/trackers.txt`,
+          url: process.env.TRACKERS_URL || undefined,
+        });
+  const enrichItem = (item) =>
+    item?.magnet ? { ...item, magnet: trackers.enrich(item.magnet) } : item;
   let active = 0;
   const json = (res, status, data) => {
     res.writeHead(status, {
@@ -113,6 +124,7 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
           if (!providers.some((p) => query.source === 'all' || p.id === query.source))
             return json(res, 400, { error: '该数据源尚未启用' });
           const result = await search(query);
+          result.items = result.items.map(enrichItem);
           return json(res, result.failed ? 502 : 200, result);
         }
         if (url.pathname === '/api/resource') {
@@ -147,7 +159,7 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
             details.set(id, detail);
             if (details.size > 200) details.delete(details.keys().next().value);
           }
-          return json(res, 200, detail.item);
+          return json(res, 200, enrichItem(detail.item));
         }
         return json(res, 404, { error: '接口不存在' });
       }
@@ -166,11 +178,12 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
   });
   server.requestTimeout = 30_000;
   server.headersTimeout = 15_000;
-  return { server, store };
+  return { server, store, trackers };
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  const { server, store } = createApp();
+  const { server, store, trackers } = createApp();
+  trackers.refreshIfStale().catch(() => {});
   const host = process.env.HOST || '127.0.0.1';
   const port = Number(process.env.PORT || 3210);
   server.listen(port, host, () => console.log(`自由 BT 已启动：http://${host}:${port}`));
