@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
+import { inferCategory } from './categories.js';
 import { makeMagnet, normalizeHash, parseMagnet, parseTorrent } from './torrent.js';
 
 const mediaTypes = { video: 'movies', audio: 'audio', books: 'texts', software: 'software' };
@@ -260,7 +261,7 @@ export function createTorznabProvider({ url, key, name = '我的索引器', fetc
             name: title,
             source: 'torznab',
             sourceName: name,
-            category: resolvedCategory,
+            category: resolvedCategory !== 'other' ? resolvedCategory : inferCategory(title),
             size: number(row.size ?? row.enclosure?.['@_length'] ?? attrs.size),
             seeders: number(attrs.seeders),
             added: string(row.pubDate),
