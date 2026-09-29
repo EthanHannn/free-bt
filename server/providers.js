@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
 import { makeMagnet, normalizeHash, parseMagnet, parseTorrent } from './torrent.js';
 
@@ -169,6 +170,10 @@ export function createTorznabProvider({ url, key, name = '我的索引器', fetc
   if (!['http:', 'https:'].includes(endpoint.protocol))
     throw new Error('TORZNAB_URL 需要 HTTP(S) 地址');
   const cache = new Map();
+  // Items without a magnet/infohash keep their Jackett /dl/ URL server-side
+  // (it embeds the API key) and resolve lazily at detail time.
+  const pending = new Map();
+  const syntheticId = (value) => createHash('sha1').update(value).digest('hex');
   return {
     id: 'torznab',
     name,
@@ -217,10 +222,23 @@ export function createTorznabProvider({ url, key, name = '我的索引器', fetc
             );
             magnet = link ? parseMagnet(link) : { hash: normalizeHash(attrs.infohash) };
           } catch {
-            skipped++;
-            return null;
+            magnet = null;
           }
-          const title = string(row.title) || magnet.name || magnet.hash;
+          // Some indexers (e.g. 0Magnet) expose only a Jackett /dl/ proxy URL that
+          // redirects to a magnet or serves a .torrent; accept it for lazy resolution.
+          let downloadUrl = null;
+          if (!magnet) {
+            downloadUrl =
+              [row.link, row.enclosure?.['@_url']]
+                .map((v) => webUrl(String(v)))
+                .find((v) => v && new URL(v).origin === endpoint.origin) || null;
+            if (!downloadUrl) {
+              skipped++;
+              return null;
+            }
+          }
+          const identity = magnet ? magnet.hash : syntheticId(downloadUrl);
+          const title = string(row.title) || magnet?.name || magnet?.hash || '未命名资源';
           const cat = Number(
             list(row['torznab:attr']).find((a) => a['@_name'] === 'category')?.['@_value'] ||
               row.category,
@@ -236,9 +254,9 @@ export function createTorznabProvider({ url, key, name = '我的索引器', fetc
                     ? 'software'
                     : 'other';
           const item = {
-            id: `torznab:${magnet.hash}`,
-            hash: magnet.hash,
-            magnet: magnet.magnet || makeMagnet(magnet.hash, title),
+            id: `torznab:${identity}`,
+            hash: magnet?.hash || null,
+            magnet: magnet ? magnet.magnet || makeMagnet(magnet.hash, title) : null,
             name: title,
             source: 'torznab',
             sourceName: name,
@@ -246,10 +264,14 @@ export function createTorznabProvider({ url, key, name = '我的索引器', fetc
             size: number(row.size ?? row.enclosure?.['@_length'] ?? attrs.size),
             seeders: number(attrs.seeders),
             added: string(row.pubDate),
-            sourceUrl: null,
+            sourceUrl: webUrl(string(row.comments)) || webUrl(string(row.guid)) || null,
           };
-          cache.set(item.hash, item);
+          cache.set(identity, item);
           if (cache.size > 2000) cache.delete(cache.keys().next().value);
+          if (downloadUrl) {
+            pending.set(identity, downloadUrl);
+            if (pending.size > 2000) pending.delete(pending.keys().next().value);
+          }
           return item;
         })
         .filter(Boolean);
@@ -266,8 +288,48 @@ export function createTorznabProvider({ url, key, name = '我的索引器', fetc
       };
     },
     async detail(hash) {
-      const item = cache.get(normalizeHash(hash));
+      const identity = normalizeHash(hash);
+      const item = cache.get(identity);
       if (!item) throw new Error('搜索记录已过期，请重新搜索');
+      if (item.magnet) return item;
+      // Lazy-resolve a Jackett /dl/ proxy URL into a real magnet or .torrent.
+      const downloadUrl = pending.get(identity);
+      if (!downloadUrl) throw new Error('该资源缺少磁力链接，请重新搜索');
+      const response = await fetcher(downloadUrl, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(15000),
+        headers: { 'User-Agent': 'FreeBT/0.1 (personal search)' },
+      });
+      let parsed = null;
+      if (response.status >= 300 && response.status < 400) {
+        await response.body?.cancel();
+        const location = response.headers.get('location') || '';
+        if (!location.startsWith('magnet:')) throw new Error('索引器未返回磁力链接');
+        parsed = parseMagnet(location);
+      } else if (response.ok) {
+        const reader = response.body.getReader();
+        const chunks = [];
+        let size = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.length;
+          if (size > 8 * 1024 * 1024) throw new Error('索引器返回的种子文件过大');
+          chunks.push(value);
+        }
+        parsed = parseTorrent(Buffer.concat(chunks));
+        if (parsed.files?.length) item.files = parsed.files;
+      } else {
+        await response.body?.cancel();
+        throw new Error(`索引器下载链接返回 HTTP ${response.status}`);
+      }
+      item.hash = parsed.hash;
+      item.magnet = parsed.magnet || makeMagnet(parsed.hash, item.name);
+      // Re-key the cache under the real info hash now that it is known.
+      cache.delete(identity);
+      pending.delete(identity);
+      item.id = `torznab:${parsed.hash}`;
+      cache.set(parsed.hash, item);
       return item;
     },
   };
