@@ -61,7 +61,6 @@ let sources = [],
   controller,
   requestId = 0,
   toastTimer;
-const expanded = new Map();
 let state = {
   view: 'search',
   q: '',
@@ -211,7 +210,7 @@ function empty(title, text, retry = false) {
 function card(item) {
   const bookmarked = isSaved(item);
   const category = Object.hasOwn(glyphs, item.category) ? item.category : 'other';
-  return `<article class="result-card" data-id="${escape(item.id)}"><span class="file-icon ${category}" aria-hidden="true">${glyphs[category]}</span><div class="result-info"><button class="result-name" data-action="detail">${escape(item.name)}</button><div class="result-tags"><span class="category-label">${labels[category]}</span><span>${escape(size(item.size))}${item.sizeScope === 'archive' && item.size != null ? '（档案）' : ''}</span><span>${escape(date(item.added))}${item.source === 'local' ? '（导入）' : ''}</span><span class="seeders ${Number(item.seeders) > 0 ? 'has-seeds' : ''}">做种 ${item.seeders == null ? '未知' : escape(item.seeders)}</span></div><div class="result-source">${escape((item.sources || [item.sourceName]).join(' · '))}${item.hash ? `<span class="hash-preview">${escape(item.hash.slice(0, 12))}…</span>` : ''}</div></div><div class="result-actions"><button class="save-button ${bookmarked ? 'is-saved' : ''}" data-action="save" aria-label="${bookmarked ? '取消收藏' : '收藏'}：${escape(item.name)}" aria-pressed="${bookmarked}" title="${bookmarked ? '取消收藏' : '收藏'}">${bookmarked ? '★' : '☆'}</button><button class="copy-button" data-action="copy">复制磁力</button><button class="push-button" data-action="push">推送下载</button></div></article>`;
+  return `<article class="result-card" data-id="${escape(item.id)}"><span class="file-icon ${category}" aria-hidden="true">${glyphs[category]}</span><div class="result-info"><span class="result-name">${escape(item.name)}</span><div class="result-tags"><span class="category-label">${labels[category]}</span><span>${escape(size(item.size))}${item.sizeScope === 'archive' && item.size != null ? '（档案）' : ''}</span><span>${escape(date(item.added))}${item.source === 'local' ? '（导入）' : ''}</span><span class="seeders ${Number(item.seeders) > 0 ? 'has-seeds' : ''}">做种 ${item.seeders == null ? '未知' : escape(item.seeders)}</span></div><div class="result-source">${escape((item.sources || [item.sourceName]).join(' · '))}${item.hash ? `<span class="hash-preview">${escape(item.hash.slice(0, 12))}…</span>` : ''}</div></div><div class="result-actions"><button class="save-button ${bookmarked ? 'is-saved' : ''}" data-action="save" aria-label="${bookmarked ? '取消收藏' : '收藏'}：${escape(item.name)}" aria-pressed="${bookmarked}" title="${bookmarked ? '取消收藏' : '收藏'}">${bookmarked ? '★' : '☆'}</button><button class="copy-button" data-action="copy">复制磁力</button><button class="push-button" data-action="push">推送下载</button><button class="open-button" data-action="open">打开客户端</button></div></article>`;
 }
 async function runSearch() {
   const id = ++requestId;
@@ -366,10 +365,30 @@ async function copyResource(item, button) {
       await navigator.clipboard.writeText(magnet);
       toast('磁力已复制，粘贴到 BT 客户端即可下载');
     } catch {
-      const cardEl = button.closest('.result-card');
-      if (cardEl && !cardEl.querySelector('.card-detail')) await toggleDetail(resource, cardEl);
-      toast('浏览器未允许复制，请展开资源手动复制磁力');
+      const field = document.createElement('textarea');
+      field.value = magnet;
+      document.body.append(field);
+      field.select();
+      const ok = document.execCommand('copy');
+      field.remove();
+      toast(ok ? '磁力已复制，粘贴到 BT 客户端即可下载' : '浏览器未允许复制，请重试');
     }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = text;
+  }
+}
+async function openResource(item, button) {
+  const text = button.textContent;
+  button.disabled = true;
+  button.textContent = '正在打开…';
+  try {
+    const target = safeMagnet(item.magnet) ? item : await resolveResource(item);
+    const magnet = safeMagnet(target.magnet);
+    if (!magnet) throw new Error('此资源暂无可用磁力链接');
+    window.location.href = magnet;
   } catch (error) {
     toast(error.message);
   } finally {
@@ -397,65 +416,6 @@ async function pushResource(item, button) {
     button.disabled = false;
     button.textContent = text;
   }
-}
-function detailHtml(data) {
-  const magnet = safeMagnet(data.magnet),
-    origin = safeWeb(data.sourceUrl),
-    torrent = safeWeb(data.torrentUrl);
-  return (
-    `<dl class="detail-info"><div><dt>来源</dt><dd>${escape(data.sourceName)}</dd></div><div><dt>${data.source === 'local' ? '导入时间' : '发布日期'}</dt><dd>${escape(date(data.added))}</dd></div><div><dt>Info hash</dt><dd class="mono">${escape(data.hash || '未知')}</dd></div></dl>` +
-    (magnet
-      ? `<label class="small-label">磁力链接</label><textarea class="card-magnet" readonly rows="2" aria-label="磁力链接">${escape(magnet)}</textarea>`
-      : '') +
-    `<div class="detail-actions">${magnet ? `<button class="secondary" data-action="copy">复制磁力</button><button class="secondary push-button" data-action="push">推送下载</button><a class="secondary" href="${escape(magnet)}">打开客户端 ↗</a>` : ''}${origin ? `<a class="text-link" href="${escape(origin)}" target="_blank" rel="noopener noreferrer">原始页面 ↗</a>` : ''}${torrent ? `<a class="text-link" href="${escape(torrent)}" target="_blank" rel="noopener noreferrer">下载种子 ↗</a>` : ''}</div>` +
-    `<div class="files-heading"><h3>文件清单 <span>${data.fileCount == null ? '' : escape(data.fileCount)}</span></h3>${data.files?.length ? '<input class="file-query" type="search" placeholder="筛选文件名" aria-label="筛选文件">' : ''}</div>` +
-    (data.fileListSource || data.detailNote
-      ? `<p class="muted">${escape(data.fileListSource || data.detailNote)}</p>`
-      : '') +
-    `<div class="file-list-box"></div>` +
-    (data.fileCount > 2000 && data.files?.length === 2000
-      ? '<p class="muted">文件较多，仅展示前 2,000 个。完整清单可在 BT 客户端中查看。</p>'
-      : '')
-  );
-}
-async function toggleDetail(item, cardEl) {
-  const existing = cardEl.querySelector('.card-detail');
-  if (existing) {
-    expanded.delete(cardEl);
-    existing.remove();
-    return;
-  }
-  const box = document.createElement('div');
-  box.className = 'card-detail';
-  box.innerHTML =
-    '<div class="loading"><span class="spinner"></span><p>正在读取种子信息…</p></div>';
-  cardEl.append(box);
-  try {
-    const data = item.files ? item : await resolveResource(item);
-    if (!box.isConnected) return;
-    cardEl.dataset.id = data.id;
-    expanded.set(cardEl, data);
-    box.innerHTML = detailHtml(data);
-    renderFiles('', cardEl);
-  } catch (error) {
-    if (!box.isConnected) return;
-    const origin = safeWeb(item.sourceUrl);
-    box.innerHTML =
-      `${empty('详情暂时不可用', error.message)}<button class="secondary" data-action="detail-retry">重试</button>${origin ? `<a class="text-link" href="${escape(origin)}" target="_blank" rel="noopener noreferrer">访问原始页面 ↗</a>` : ''}`;
-  }
-}
-function renderFiles(query, cardEl) {
-  const box = cardEl?.querySelector('.file-list-box');
-  if (!box) return;
-  const files = expanded.get(cardEl)?.files;
-  if (!files?.length) {
-    box.innerHTML = '<p class="muted">来源未提供文件清单，可在 BT 客户端中查看。</p>';
-    return;
-  }
-  const filtered = files.filter((file) => file.name.toLowerCase().includes(query.toLowerCase()));
-  box.innerHTML = filtered.length
-    ? `<ul class="file-list">${filtered.map((file) => `<li><span>${escape(file.name)}</span><span>${escape(size(file.size))}</span></li>`).join('')}</ul>`
-    : '<p class="muted">没有匹配的文件。</p>';
 }
 function renderSources() {
   $('#source-cards').innerHTML =
@@ -540,11 +500,7 @@ document.addEventListener('click', (event) => {
     if (target.dataset.action === 'save') toggleSaved(item);
     if (target.dataset.action === 'copy') copyResource(item, target);
     if (target.dataset.action === 'push') pushResource(item, target);
-    if (target.dataset.action === 'detail') toggleDetail(item, cardEl);
-    if (target.dataset.action === 'detail-retry') {
-      cardEl.querySelector('.card-detail')?.remove();
-      toggleDetail(item, cardEl);
-    }
+    if (target.dataset.action === 'open') openResource(item, target);
   }
 });
 $('#source').addEventListener('change', () =>
@@ -574,12 +530,6 @@ $('#prev').addEventListener('click', () => {
 $('#next').addEventListener('click', () => {
   navigate({ page: state.page + 1 });
   $('#search-form').scrollIntoView({ block: 'start' });
-});
-document.addEventListener('input', (event) => {
-  if (event.target.classList.contains('file-query')) {
-    const cardEl = event.target.closest('.result-card');
-    if (cardEl) renderFiles(event.target.value, cardEl);
-  }
 });
 document.addEventListener('keydown', (event) => {
   if (
