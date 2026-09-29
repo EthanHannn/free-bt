@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createNameResolver, normalizedTitle, matchesName } from '../server/names.js';
+import {
+  chainResolvers,
+  createNameResolver,
+  createTmdbResolver,
+  normalizedTitle,
+  matchesName,
+} from '../server/names.js';
 import { createSearch } from '../server/search.js';
 
 test('title matching normalizes traditional Chinese, punctuation and release separators', () => {
@@ -151,4 +157,50 @@ test('literal searches skip the metadata service and limit expanded requests', a
   assert.equal(calls, 2);
   await search(query);
   assert.equal(calls, 5);
+});
+
+test('TMDB resolves a dominant exact match and reports year', async () => {
+  const resolver = createTmdbResolver({
+    apiKey: 'k',
+    fetcher: async () =>
+      Response.json({
+        results: [
+          { media_type: 'tv', id: 1, name: '无耻之徒', original_name: 'Shameless', first_air_date: '2011-01-09', popularity: 300 },
+          { media_type: 'tv', id: 2, name: '无耻之徒', original_name: 'Shameless UK', first_air_date: '2004-01-13', popularity: 20 },
+          { media_type: 'person', id: 3, name: '无耻之徒演员' },
+        ],
+      }),
+  });
+  const result = await resolver('无耻之徒');
+  assert.equal(result.status, 'resolved');
+  assert.equal(result.english, 'Shameless');
+  assert.equal(result.year, '2011');
+  assert.deepEqual(result.queries.slice(0, 2), ['无耻之徒', 'Shameless']);
+  assert.match(result.sourceUrl, /themoviedb\.org\/tv\/1/);
+});
+
+test('TMDB stays ambiguous when same-title works have comparable popularity and reports failure', async () => {
+  const close = createTmdbResolver({
+    apiKey: 'k',
+    fetcher: async () =>
+      Response.json({
+        results: [
+          { media_type: 'movie', id: 1, title: '同名作品', original_title: 'Same A', release_date: '2001-01-01', popularity: 50 },
+          { media_type: 'movie', id: 2, title: '同名作品', original_title: 'Same B', release_date: '2002-01-01', popularity: 40 },
+        ],
+      }),
+  });
+  assert.equal((await close('同名作品')).status, 'ambiguous');
+  const broken = createTmdbResolver({
+    apiKey: 'k',
+    fetcher: async () => new Response('', { status: 401 }),
+  });
+  assert.equal((await broken('同名作品')).status, 'unavailable');
+});
+
+test('chainResolvers falls back past unavailable resolvers', async () => {
+  const unavailable = async () => ({ status: 'unavailable' });
+  const resolved = async () => ({ status: 'resolved', queries: ['q', 'Q'] });
+  assert.equal((await chainResolvers(unavailable, resolved)('q')).status, 'resolved');
+  assert.equal((await chainResolvers(unavailable)('q')).status, 'unavailable');
 });

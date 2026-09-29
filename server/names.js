@@ -29,6 +29,122 @@ export function basicNames(q) {
   };
 }
 
+export function createTmdbResolver({ apiKey, fetcher = fetch, ttl = 24 * 60 * 60_000 } = {}) {
+  const cache = new Map(),
+    inflight = new Map();
+  return async function resolveTmdb(q) {
+    const base = basicNames(q);
+    if (!apiKey || !/\p{Script=Han}/u.test(q) || normalizedTitle(q).length < 2 || q.length > 80)
+      return base;
+    const key = normalizedTitle(q);
+    const cached = cache.get(key);
+    if (cached?.expires > Date.now())
+      return {
+        ...cached.value,
+        original: q,
+        queries:
+          cached.value.status === 'resolved'
+            ? [...new Set([q, cached.value.english, ...base.queries])].slice(0, 3)
+            : base.queries,
+      };
+    if (inflight.has(q)) return inflight.get(q);
+    const promise = (async () => {
+      try {
+        const params = new URLSearchParams({
+          api_key: apiKey,
+          query: q,
+          language: 'zh-CN',
+          include_adult: 'false',
+          page: '1',
+        });
+        const data = JSON.parse(
+          (
+            await fetchBytes(`https://api.themoviedb.org/3/search/multi?${params}`, {
+              fetcher,
+              timeout: 6000,
+              max: 512 * 1024,
+            })
+          ).toString(),
+        );
+        if (!Array.isArray(data.results)) throw new Error('TMDB 响应无效');
+        const candidates = data.results
+          .filter(
+            (row) =>
+              (row.media_type === 'tv' || row.media_type === 'movie') &&
+              Number.isSafeInteger(Number(row.id)) &&
+              Number(row.id) > 0,
+          )
+          .map((row, index) => ({
+            title: String(row.name || row.title || ''),
+            english: String(row.original_name || row.original_title || ''),
+            year: String(row.first_air_date || row.release_date || '').slice(0, 4),
+            url: `https://www.themoviedb.org/${row.media_type}/${Number(row.id)}`,
+            key: normalizedTitle(bareTitle(String(row.name || row.title || ''))),
+            popularity: Number(row.popularity) || 0,
+            index,
+          }))
+          .filter((page) => page.title.length > 0 && page.title.length <= 160 && page.english)
+          .filter(
+            (page) =>
+              page.key === key ||
+              (key.length >= 4 && page.key.includes(key) && key.length / page.key.length >= 0.5),
+          )
+          .slice(0, 3);
+        const exact = candidates.filter((page) => page.key === key);
+        let result = { ...base, candidates };
+        // Resolve a single exact match; with several works sharing a title, only trust a
+        // dominant popularity lead (e.g. 无耻之徒: the US series dwarfs the British one).
+        if (
+          exact.length &&
+          (exact.length === 1 || exact[0].popularity >= exact[1].popularity * 3)
+        ) {
+          const match = exact[0];
+          const english = bareTitle(match.english);
+          result = {
+            ...result,
+            status: 'resolved',
+            title: match.title,
+            english,
+            year: match.year,
+            sourceName: 'TMDB',
+            sourceUrl: match.url,
+            queries: [...new Set([q, english, ...base.queries])].slice(0, 3),
+            candidates: [],
+          };
+        } else if (candidates.length) result.status = 'ambiguous';
+        cache.set(key, { value: result, expires: Date.now() + ttl });
+        if (cache.size > 200) cache.delete(cache.keys().next().value);
+        return result;
+      } catch {
+        return {
+          ...base,
+          status: 'unavailable',
+          note: 'TMDB 片名资料暂时不可用，已尝试其他来源。',
+        };
+      }
+    })();
+    inflight.set(q, promise);
+    try {
+      return await promise;
+    } finally {
+      inflight.delete(q);
+    }
+  };
+}
+
+export function chainResolvers(...resolvers) {
+  const active = resolvers.filter(Boolean);
+  return async (q) => {
+    let fallback = null;
+    for (const resolve of active) {
+      const result = await resolve(q);
+      if (result.status !== 'unavailable') return result;
+      fallback ||= result;
+    }
+    return fallback || basicNames(q);
+  };
+}
+
 export function createNameResolver({ fetcher = fetch, ttl = 24 * 60 * 60_000 } = {}) {
   const cache = new Map(),
     inflight = new Map();

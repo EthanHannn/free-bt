@@ -65,7 +65,9 @@ export function createApiBayProvider(fetcher = fetch) {
       const cat =
         { video: '200', audio: '100', software: '300,400', books: '601', other: '600' }[category] ||
         '0';
-      const rows = await read(`q.php?${new URLSearchParams({ q, cat })}`);
+      // The upstream index returns an empty sentinel for some capitalized single-word
+      // queries while the lowercase form matches; lowercasing is a no-op for CJK terms.
+      const rows = await read(`q.php?${new URLSearchParams({ q: q.toLowerCase(), cat })}`);
       if (!Array.isArray(rows)) throw new Error('BT 索引返回格式无效');
       // ApiBay can ignore unsupported scripts and return trending torrents. Never treat those as matches.
       const mapped = rows.slice(0, 100).map(resource).filter(Boolean);

@@ -76,3 +76,14 @@ test('provider registry accepts numeric detail IDs and rejects invalid and uncon
     store.close();
   }
 });
+
+test('ApiBay lowercases the upstream query while matching against the original term', async () => {
+  let upstream;
+  const provider = createApiBayProvider(async (url) => {
+    upstream = String(url);
+    return Response.json([row]);
+  });
+  const match = await provider.search({ ...query, q: 'Queen of News' });
+  assert.equal(new URL(upstream).searchParams.get('q'), 'queen of news');
+  assert.equal(match.items.length, 1);
+});
