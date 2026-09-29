@@ -2,21 +2,38 @@ import { categories } from './store.js';
 import { basicNames, matchesName } from './names.js';
 import { isJunkName } from './junk.js';
 
+export const sizeRanges = {
+  all: null,
+  small: [0, 1024 ** 3],
+  medium: [1024 ** 3, 10 * 1024 ** 3],
+  large: [10 * 1024 ** 3, Infinity],
+};
+export const timeRanges = {
+  all: null,
+  week: 7 * 24 * 60 * 60 * 1000,
+  month: 30 * 24 * 60 * 60 * 1000,
+  year: 365 * 24 * 60 * 60 * 1000,
+};
+
 export function searchParams(params) {
   const q = (params.get('q') || '').normalize('NFKC').trim();
   if (!q || q.length > 160) throw new Error('请输入 1–160 个字符的关键词');
   const category = params.get('category') || 'all';
   const sort = params.get('sort') || 'relevance';
   const source = params.get('source') || 'all';
+  const size = params.get('size') || 'all';
+  const time = params.get('time') || 'all';
   const page = Number(params.get('page') || 1);
   if (
     !Object.hasOwn(categories, category) ||
-    !['relevance', 'newest'].includes(sort) ||
+    !['relevance', 'newest', 'seeders'].includes(sort) ||
+    !Object.hasOwn(sizeRanges, size) ||
+    !Object.hasOwn(timeRanges, time) ||
     !/^[a-z][a-z0-9-]{0,30}$/.test(source)
   )
     throw new Error('筛选条件无效');
   if (!Number.isInteger(page) || page < 1 || page > 100) throw new Error('页码需要在 1–100 之间');
-  return { q, category, sort, source, page, limit: 20, literal: params.get('literal') === '1', junk: params.get('junk') === '1' };
+  return { q, category, sort, source, size, time, page, limit: 20, literal: params.get('literal') === '1', junk: params.get('junk') === '1' };
 }
 
 export function createSearch(
@@ -116,6 +133,8 @@ export function createSearch(
       let items = [...unique.values()];
       if (query.sort === 'newest')
         items.sort((a, b) => (Date.parse(b.added) || 0) - (Date.parse(a.added) || 0));
+      else if (query.sort === 'seeders')
+        items.sort((a, b) => (b.seeders ?? -1) - (a.seeders ?? -1));
       else {
         // A Chinese query usually wants Chinese-named (or Chinese-subtitled) releases
         // first; English mirrors of the same work stay right after them.
@@ -136,6 +155,27 @@ export function createSearch(
         junkHidden = items.length - kept.length;
         items = kept;
       }
+      // Size/time filters apply to merged results; items with unknown size or
+      // date are excluded while the matching filter is active.
+      let filtered = 0;
+      const range = sizeRanges[query.size];
+      if (range) {
+        const kept = items.filter(
+          (item) => item.size != null && item.size >= range[0] && item.size < range[1],
+        );
+        filtered += items.length - kept.length;
+        items = kept;
+      }
+      const window = timeRanges[query.time];
+      if (window) {
+        const since = Date.now() - window;
+        const kept = items.filter((item) => {
+          const at = Date.parse(item.added);
+          return Number.isFinite(at) && at >= since;
+        });
+        filtered += items.length - kept.length;
+        items = kept;
+      }
       const value = {
         items,
         sources,
@@ -145,6 +185,7 @@ export function createSearch(
         failed: sources.every((s) => s.state === 'error'),
         partial: sources.some((s) => s.state !== 'ok'),
         junkHidden: junkHidden || undefined,
+        filtered: filtered || undefined,
         elapsed: Math.round(performance.now() - start),
         cached: false,
       };

@@ -69,6 +69,8 @@ let state = {
   category: 'all',
   source: 'all',
   sort: 'relevance',
+  size: 'all',
+  time: 'all',
   page: 1,
   literal: false,
   junk: readStorage('freebt.junkFilter', false) === true,
@@ -133,6 +135,8 @@ function navigate(patch, replace = false) {
     if (state.category !== 'all') params.set('category', state.category);
     if (state.source !== 'all') params.set('source', state.source);
     if (state.sort !== 'relevance') params.set('sort', state.sort);
+    if (state.size !== 'all') params.set('size', state.size);
+    if (state.time !== 'all') params.set('time', state.time);
     if (state.page > 1) params.set('page', state.page);
     if (state.literal) params.set('literal', '1');
   }
@@ -152,7 +156,11 @@ function readUrl() {
     source: /^[a-z][a-z0-9-]{0,30}$/.test(params.get('source') || '')
       ? params.get('source')
       : 'all',
-    sort: params.get('sort') === 'newest' ? 'newest' : 'relevance',
+    sort: params.get('sort') === 'newest' || params.get('sort') === 'seeders'
+      ? params.get('sort')
+      : 'relevance',
+    size: ['small', 'medium', 'large'].includes(params.get('size')) ? params.get('size') : 'all',
+    time: ['week', 'month', 'year'].includes(params.get('time')) ? params.get('time') : 'all',
     page: Math.max(1, Math.min(100, Math.floor(Number(params.get('page')) || 1))),
     literal: params.get('literal') === '1',
     junk: state.junk,
@@ -181,6 +189,8 @@ function render() {
   $('#query').value = state.q;
   $('#source').value = state.source;
   $('#sort').value = state.sort;
+  $('#size').value = state.size;
+  $('#time').value = state.time;
   $('#expand-names').checked = !state.literal;
   $('#filter-junk').checked = state.junk;
   document
@@ -202,7 +212,7 @@ function empty(title, text, retry = false) {
 function card(item) {
   const bookmarked = isSaved(item);
   const category = Object.hasOwn(glyphs, item.category) ? item.category : 'other';
-  return `<article class="result-card" data-id="${escape(item.id)}"><span class="file-icon ${category}" aria-hidden="true">${glyphs[category]}</span><div class="result-info"><button class="result-name" data-action="detail">${escape(item.name)}</button><div class="result-tags"><span class="category-label">${labels[category]}</span><span>${escape(size(item.size))}${item.sizeScope === 'archive' && item.size != null ? '（档案）' : ''}</span><span>${escape(date(item.added))}${item.source === 'local' ? '（导入）' : ''}</span><span class="seeders ${Number(item.seeders) > 0 ? 'has-seeds' : ''}">做种 ${item.seeders == null ? '未知' : escape(item.seeders)}</span></div><div class="result-source">${escape((item.sources || [item.sourceName]).join(' · '))}${item.hash ? `<span class="hash-preview">${escape(item.hash.slice(0, 12))}…</span>` : ''}</div></div><div class="result-actions"><button class="save-button ${bookmarked ? 'is-saved' : ''}" data-action="save" aria-label="${bookmarked ? '取消收藏' : '收藏'}：${escape(item.name)}" aria-pressed="${bookmarked}" title="${bookmarked ? '取消收藏' : '收藏'}">${bookmarked ? '★' : '☆'}</button><button class="copy-button" data-action="copy">复制磁力</button></div></article>`;
+  return `<article class="result-card" data-id="${escape(item.id)}"><span class="file-icon ${category}" aria-hidden="true">${glyphs[category]}</span><div class="result-info"><button class="result-name" data-action="detail">${escape(item.name)}</button><div class="result-tags"><span class="category-label">${labels[category]}</span><span>${escape(size(item.size))}${item.sizeScope === 'archive' && item.size != null ? '（档案）' : ''}</span><span>${escape(date(item.added))}${item.source === 'local' ? '（导入）' : ''}</span><span class="seeders ${Number(item.seeders) > 0 ? 'has-seeds' : ''}">做种 ${item.seeders == null ? '未知' : escape(item.seeders)}</span></div><div class="result-source">${escape((item.sources || [item.sourceName]).join(' · '))}${item.hash ? `<span class="hash-preview">${escape(item.hash.slice(0, 12))}…</span>` : ''}</div></div><div class="result-actions"><button class="save-button ${bookmarked ? 'is-saved' : ''}" data-action="save" aria-label="${bookmarked ? '取消收藏' : '收藏'}：${escape(item.name)}" aria-pressed="${bookmarked}" title="${bookmarked ? '取消收藏' : '收藏'}">${bookmarked ? '★' : '☆'}</button><button class="copy-button" data-action="copy">复制磁力</button><button class="push-button" data-action="push">推送下载</button></div></article>`;
 }
 async function runSearch() {
   const id = ++requestId;
@@ -221,6 +231,8 @@ async function runSearch() {
     category: state.category,
     source: state.source,
     sort: state.sort,
+    size: state.size,
+    time: state.time,
     page: state.page,
     literal: state.literal ? '1' : '0',
   });
@@ -251,7 +263,8 @@ async function runSearch() {
         );
     $('#result-meta').textContent =
       `本页 ${items.length} 条 · ${data.cached ? '缓存结果' : `${(data.elapsed / 1000).toFixed(1)} 秒`}` +
-      (data.junkHidden ? ` · 已隐藏 ${data.junkHidden} 条疑似推广` : '');
+      (data.junkHidden ? ` · 已隐藏 ${data.junkHidden} 条疑似推广` : '') +
+      (data.filtered ? ` · 按筛选隐藏 ${data.filtered} 条` : '');
     $('#results').innerHTML = items.length
       ? items.map(card).join('')
       : data.failed
@@ -368,6 +381,27 @@ async function copyResource(item, button) {
     button.textContent = text;
   }
 }
+async function pushResource(item, button) {
+  const text = button.textContent;
+  button.disabled = true;
+  button.textContent = '推送中…';
+  try {
+    const target = safeMagnet(item.magnet) ? item : await resolveResource(item);
+    const response = await fetch('/api/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: target.id }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || '推送失败，请检查下载器配置');
+    toast(`已推送到 ${data.downloader} 开始下载`);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = text;
+  }
+}
 async function showDetail(item) {
   const id = ++detailRequestId;
   currentDetail = item;
@@ -382,7 +416,7 @@ async function showDetail(item) {
       origin = safeWeb(data.sourceUrl),
       torrent = safeWeb(data.torrentUrl);
     $('#detail-content').innerHTML =
-      `<h2 id="detail-title">${escape(data.name)}</h2><div class="detail-meta"><span>${escape(labels[data.category] || '其他')}</span><span>${escape(size(data.size))}</span><span>做种 ${data.seeders == null ? '未知' : escape(data.seeders)}</span></div><dl class="detail-info"><div><dt>来源</dt><dd>${escape(data.sourceName)}</dd></div><div><dt>${data.source === 'local' ? '导入时间' : '发布日期'}</dt><dd>${escape(date(data.added))}</dd></div><div><dt>Info hash</dt><dd class="mono">${escape(data.hash || '未知')}</dd></div></dl>${magnet ? `<label class="small-label" for="magnet-text">磁力链接</label><textarea id="magnet-text" readonly rows="3">${escape(magnet)}</textarea>` : ''}<div class="detail-actions">${magnet ? `<button class="primary" id="detail-copy">复制磁力</button><a class="secondary" href="${escape(magnet)}">打开客户端 ↗</a>` : ''}<button class="secondary" id="detail-save">${isSaved(data) ? '取消收藏' : '收藏资源'}</button>${origin ? `<a class="text-link" href="${escape(origin)}" target="_blank" rel="noopener noreferrer">原始页面 ↗</a>` : ''}${torrent ? `<a class="text-link" href="${escape(torrent)}" target="_blank" rel="noopener noreferrer">下载种子 ↗</a>` : ''}</div><div class="files-heading"><h3>文件清单 <span>${data.fileCount == null ? '' : escape(data.fileCount)}</span></h3>${data.files?.length ? '<label class="sr-only" for="file-query">筛选文件</label><input id="file-query" type="search" placeholder="筛选文件名">' : ''}</div><div id="file-list"></div>${data.fileCount > 2000 && data.files?.length === 2000 ? '<p class="muted">文件较多，仅展示前 2,000 个。完整清单可在 BT 客户端中查看。</p>' : ''}`;
+      `<h2 id="detail-title">${escape(data.name)}</h2><div class="detail-meta"><span>${escape(labels[data.category] || '其他')}</span><span>${escape(size(data.size))}</span><span>做种 ${data.seeders == null ? '未知' : escape(data.seeders)}</span></div><dl class="detail-info"><div><dt>来源</dt><dd>${escape(data.sourceName)}</dd></div><div><dt>${data.source === 'local' ? '导入时间' : '发布日期'}</dt><dd>${escape(date(data.added))}</dd></div><div><dt>Info hash</dt><dd class="mono">${escape(data.hash || '未知')}</dd></div></dl>${magnet ? `<label class="small-label" for="magnet-text">磁力链接</label><textarea id="magnet-text" readonly rows="3">${escape(magnet)}</textarea>` : ''}<div class="detail-actions">${magnet ? `<button class="primary" id="detail-copy">复制磁力</button><button class="secondary push-button" id="detail-push">推送下载</button><a class="secondary" href="${escape(magnet)}">打开客户端 ↗</a>` : ''}<button class="secondary" id="detail-save">${isSaved(data) ? '取消收藏' : '收藏资源'}</button>${origin ? `<a class="text-link" href="${escape(origin)}" target="_blank" rel="noopener noreferrer">原始页面 ↗</a>` : ''}${torrent ? `<a class="text-link" href="${escape(torrent)}" target="_blank" rel="noopener noreferrer">下载种子 ↗</a>` : ''}</div><div class="files-heading"><h3>文件清单 <span>${data.fileCount == null ? '' : escape(data.fileCount)}</span></h3>${data.files?.length ? '<label class="sr-only" for="file-query">筛选文件</label><input id="file-query" type="search" placeholder="筛选文件名">' : ''}</div><div id="file-list"></div>${data.fileCount > 2000 && data.files?.length === 2000 ? '<p class="muted">文件较多，仅展示前 2,000 个。完整清单可在 BT 客户端中查看。</p>' : ''}`;
     if (data.fileListSource || data.detailNote)
       $('#file-list').insertAdjacentHTML(
         'beforebegin',
@@ -425,6 +459,7 @@ async function loadSources() {
     if (!response.ok) throw new Error();
     const data = await response.json();
     sources = data.sources;
+    document.body.classList.toggle('has-downloader', data.downloader?.configured === true);
     renderSearchScope();
     $('#source').innerHTML =
       '<option value="all">所有数据源</option>' +
@@ -488,9 +523,11 @@ document.addEventListener('click', (event) => {
     if (!item) return;
     if (target.dataset.action === 'save') toggleSaved(item);
     if (target.dataset.action === 'copy') copyResource(item, target);
+    if (target.dataset.action === 'push') pushResource(item, target);
     if (target.dataset.action === 'detail') showDetail(item);
   }
   if (target.id === 'detail-copy') copyResource(currentDetail, target);
+  if (target.id === 'detail-push') pushResource(currentDetail, target);
   if (target.id === 'detail-save') toggleSaved(currentDetail);
   if (target.id === 'detail-retry') showDetail(currentDetail);
 });
@@ -507,6 +544,12 @@ $('#filter-junk').addEventListener('change', () => {
 });
 $('#sort').addEventListener('change', () =>
   navigate({ q: $('#query').value.trim(), sort: $('#sort').value, page: 1 }),
+);
+$('#size').addEventListener('change', () =>
+  navigate({ q: $('#query').value.trim(), size: $('#size').value, page: 1 }),
+);
+$('#time').addEventListener('change', () =>
+  navigate({ q: $('#query').value.trim(), time: $('#time').value, page: 1 }),
 );
 $('#prev').addEventListener('click', () => {
   navigate({ page: state.page - 1 });

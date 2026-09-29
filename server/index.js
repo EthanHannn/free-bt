@@ -5,6 +5,7 @@ import { createStore } from './store.js';
 import { createArchiveProvider, createTorznabProvider } from './providers.js';
 import { createSearch, searchParams } from './search.js';
 import { createApiBayProvider } from './apibay.js';
+import { createDownloader } from './downloader.js';
 import { chainResolvers, createNameResolver, createTmdbResolver } from './names.js';
 import { createTrackers } from './trackers.js';
 
@@ -16,7 +17,11 @@ const assets = {
   '/logo.png': ['logo.png', 'image/png'],
 };
 
-export function createApp({ store = createStore(process.env.DATA_DIR), externalProviders } = {}) {
+export function createApp({
+  store = createStore(process.env.DATA_DIR),
+  externalProviders,
+  downloader,
+} = {}) {
   const providers = [
     {
       id: 'local',
@@ -66,6 +71,53 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
         });
   const enrichItem = (item) =>
     item?.magnet ? { ...item, magnet: trackers.enrich(item.magnet) } : item;
+  const pusher = downloader === undefined ? createDownloader(process.env) : downloader;
+  // Resolve a "provider:resourceId" into a detail item, with caching and
+  // in-flight dedupe. Throws Error with .status for client-facing failures.
+  async function resolveDetail(id) {
+    if (!/^[a-z][a-z0-9-]{0,30}:[a-zA-Z0-9_.-]{1,200}$/.test(id)) {
+      const error = new Error('资源编号无效');
+      error.status = 400;
+      throw error;
+    }
+    const split = id.indexOf(':');
+    const provider = providers.find((p) => p.id === id.slice(0, split));
+    if (!provider) {
+      const error = new Error('数据源未启用');
+      error.status = 404;
+      throw error;
+    }
+    const resourceId = id.slice(split + 1);
+    const validId =
+      provider.validId ||
+      (provider.id === 'archive'
+        ? (value) => /^[a-zA-Z0-9_.-]{1,200}$/.test(value)
+        : (value) => /^[a-f\d]{40}$/.test(value));
+    if (!validId(resourceId)) {
+      const error = new Error('资源编号无效');
+      error.status = 400;
+      throw error;
+    }
+    let detail = details.get(id);
+    if (!detail || detail.expires <= Date.now()) {
+      let promise = detailInflight.get(id);
+      if (!promise) {
+        promise = Promise.resolve().then(() => provider.detail(resourceId));
+        detailInflight.set(id, promise);
+      }
+      let item;
+      try {
+        item = await promise;
+      } finally {
+        detailInflight.delete(id);
+      }
+      if (!item) return null;
+      detail = { item, expires: Date.now() + 10 * 60_000 };
+      details.set(id, detail);
+      if (details.size > 200) details.delete(details.keys().next().value);
+    }
+    return detail.item;
+  }
   let active = 0;
   const json = (res, status, data) => {
     res.writeHead(status, {
@@ -84,8 +136,8 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
     let counted = false;
     try {
       const url = new URL(req.url, 'http://localhost');
-      if (!['GET', 'HEAD'].includes(req.method)) {
-        res.setHeader('Allow', 'GET, HEAD');
+      if (!['GET', 'HEAD'].includes(req.method) && !(req.method === 'POST' && url.pathname === '/api/download')) {
+        res.setHeader('Allow', 'GET, HEAD, POST');
         return json(res, 405, { error: '不支持的请求方法' });
       }
       if (url.pathname.startsWith('/api/')) {
@@ -110,6 +162,7 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
               kind: p.kind || (p.id === 'torznab' ? 'bt-index' : p.id),
             })),
             torznabConfigured: providers.some((p) => p.id === 'torznab'),
+            downloader: { configured: Boolean(pusher), name: pusher?.name || null },
           });
         if (active >= 16) return json(res, 503, { error: '正在处理较多搜索，请稍后重试' });
         active++;
@@ -128,38 +181,44 @@ export function createApp({ store = createStore(process.env.DATA_DIR), externalP
           return json(res, result.failed ? 502 : 200, result);
         }
         if (url.pathname === '/api/resource') {
-          const id = url.searchParams.get('id') || '';
-          if (!/^[a-z][a-z0-9-]{0,30}:[a-zA-Z0-9_.-]{1,200}$/.test(id))
-            return json(res, 400, { error: '资源编号无效' });
-          const split = id.indexOf(':');
-          const provider = providers.find((p) => p.id === id.slice(0, split));
-          if (!provider) return json(res, 404, { error: '数据源未启用' });
-          const resourceId = id.slice(split + 1);
-          const validId =
-            provider.validId ||
-            (provider.id === 'archive'
-              ? (value) => /^[a-zA-Z0-9_.-]{1,200}$/.test(value)
-              : (value) => /^[a-f\d]{40}$/.test(value));
-          if (!validId(resourceId)) return json(res, 400, { error: '资源编号无效' });
-          let detail = details.get(id);
-          if (!detail || detail.expires <= Date.now()) {
-            let promise = detailInflight.get(id);
-            if (!promise) {
-              promise = Promise.resolve().then(() => provider.detail(id.slice(split + 1)));
-              detailInflight.set(id, promise);
-            }
-            let item;
-            try {
-              item = await promise;
-            } finally {
-              detailInflight.delete(id);
-            }
-            if (!item) return json(res, 404, { error: '资源不存在' });
-            detail = { item, expires: Date.now() + 10 * 60_000 };
-            details.set(id, detail);
-            if (details.size > 200) details.delete(details.keys().next().value);
+          let item;
+          try {
+            item = await resolveDetail(url.searchParams.get('id') || '');
+          } catch (error) {
+            return json(res, error.status || 502, { error: error.message });
           }
-          return json(res, 200, enrichItem(detail.item));
+          if (!item) return json(res, 404, { error: '资源不存在' });
+          return json(res, 200, enrichItem(item));
+        }
+        if (url.pathname === '/api/download') {
+          if (!pusher)
+            return json(res, 501, { error: '未配置下载器，请在 .env 中设置 DOWNLOADER_TYPE 等项' });
+          const chunks = [];
+          let bodySize = 0;
+          for await (const chunk of req) {
+            bodySize += chunk.length;
+            if (bodySize > 4096) return json(res, 400, { error: '请求体过大' });
+            chunks.push(chunk);
+          }
+          let id;
+          try {
+            id = JSON.parse(Buffer.concat(chunks).toString('utf8')).id;
+          } catch {
+            return json(res, 400, { error: '请求格式无效' });
+          }
+          let item;
+          try {
+            item = await resolveDetail(String(id || ''));
+          } catch (error) {
+            return json(res, error.status || 502, { error: error.message });
+          }
+          if (!item?.magnet) return json(res, 404, { error: '该资源暂无可用磁力链接' });
+          try {
+            await pusher.push(enrichItem(item).magnet);
+          } catch (error) {
+            return json(res, 502, { error: `推送下载器失败：${error.message}` });
+          }
+          return json(res, 200, { ok: true, downloader: pusher.name });
         }
         return json(res, 404, { error: '接口不存在' });
       }

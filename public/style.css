@@ -443,6 +443,9 @@ kbd {
 .welcome {
   padding-top: 32px;
 }
+body:not(.has-downloader) .push-button {
+  display: none;
+}
 .home-bottom {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -699,7 +702,8 @@ footer {
 .save-button.is-saved {
   color: var(--accent);
 }
-.copy-button {
+.copy-button,
+.push-button {
   font-size: 12px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -707,7 +711,8 @@ footer {
   min-height: 38px;
   white-space: nowrap;
 }
-.copy-button:hover {
+.copy-button:hover,
+.push-button:hover {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--accent-soft);
@@ -1297,7 +1302,8 @@ body:has(dialog[open]) {
     gap: 8px;
     margin-top: -1px;
   }
-  .copy-button {
+  .copy-button,
+  .push-button {
     font-size: 11px;
     padding: 6px 12px;
     min-height: 35px;
