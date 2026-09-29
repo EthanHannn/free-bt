@@ -115,12 +115,19 @@ export function createSearch(
       const items = [...unique.values()];
       if (query.sort === 'newest')
         items.sort((a, b) => (Date.parse(b.added) || 0) - (Date.parse(a.added) || 0));
-      else
+      else {
+        // A Chinese query usually wants Chinese-named (or Chinese-subtitled) releases
+        // first; English mirrors of the same work stay right after them.
+        const preferHan = /\p{Script=Han}/u.test(query.q);
+        const hanBoost = (item) =>
+          preferHan && /\p{Script=Han}/u.test(item.name || '') ? 1 : 0;
         items.sort(
           (a, b) =>
+            hanBoost(b) - hanBoost(a) ||
             Number(Boolean(b.magnet)) - Number(Boolean(a.magnet)) ||
             (b.seeders ?? -1) - (a.seeders ?? -1),
         );
+      }
       const value = {
         items,
         sources,

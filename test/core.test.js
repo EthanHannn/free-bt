@@ -306,3 +306,26 @@ test('HTTP app delivers search, detail and static assets without exposing local 
     store.close();
   }
 });
+
+test('Chinese queries rank Chinese-named releases ahead of English mirrors', async () => {
+  const search = createSearch([
+    {
+      id: 'mix',
+      name: '混合',
+      async search({ q }) {
+        return {
+          items: [
+            { id: 'mix:en', hash: 'b'.repeat(40), name: 'Shameless US S01 1080p', sourceName: '混合', magnet: 'magnet:x', seeders: 200 },
+            { id: 'mix:zh', hash: null, name: '无耻之徒 第一季 中文字幕', sourceName: '混合', magnet: null, seeders: 3 },
+          ],
+          total: 2,
+          hasMore: false,
+        };
+      },
+    },
+  ]);
+  const zh = await search({ q: '无耻之徒', category: 'all', source: 'all', page: 1, limit: 20, sort: 'relevance', literal: true });
+  assert.equal(zh.items[0].name, '无耻之徒 第一季 中文字幕');
+  const en = await search({ q: 'shameless', category: 'all', source: 'all', page: 1, limit: 20, sort: 'relevance', literal: true });
+  assert.equal(en.items[0].name, 'Shameless US S01 1080p');
+});
