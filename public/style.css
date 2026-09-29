@@ -443,69 +443,6 @@ kbd {
 .welcome {
   padding-top: 32px;
 }
-.welcome-heading {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  margin-bottom: 17px;
-}
-.welcome-heading h2 {
-  font-size: 14px;
-  font-weight: 600;
-}
-.welcome-heading > span {
-  font-size: 11px;
-  color: var(--muted);
-}
-.suggestions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 15px;
-}
-.suggestions button {
-  display: flex;
-  align-items: center;
-  text-align: left;
-  gap: 15px;
-  padding: 21px 20px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  transition:
-    transform 0.15s,
-    border-color 0.15s;
-}
-.suggestions button:hover {
-  transform: translateY(-3px);
-  border-color: var(--accent);
-}
-.suggestion-icon {
-  background: var(--accent-soft);
-  color: var(--accent);
-  width: 39px;
-  height: 43px;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  font-size: 22px;
-  flex: none;
-}
-.suggestions strong {
-  font-family: var(--display);
-  font-size: 14px;
-  font-weight: 600;
-}
-.suggestions small {
-  display: block;
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 3px;
-}
-.arrow {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 18px;
-}
 .home-bottom {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1141,13 +1078,6 @@ body:has(dialog[open]) {
   .home-bottom {
     gap: 35px;
   }
-  .suggestions button {
-    gap: 11px;
-    padding: 17px 13px;
-  }
-  .suggestion-icon {
-    width: 30px;
-  }
   .source-cards {
     grid-template-columns: 1fr 1fr;
   }
@@ -1280,34 +1210,6 @@ body:has(dialog[open]) {
   }
   .welcome {
     padding-top: 25px;
-  }
-  .welcome-heading {
-    gap: 12px;
-  }
-  .welcome-heading h2 {
-    font-size: 13px;
-  }
-  .welcome-heading > span {
-    font-size: 10px;
-  }
-  .suggestions {
-    grid-template-columns: 1fr;
-    gap: 9px;
-  }
-  .suggestions button {
-    padding: 14px 16px;
-    gap: 15px;
-  }
-  .suggestion-icon {
-    width: 34px;
-    height: 35px;
-    font-size: 20px;
-  }
-  .suggestions strong {
-    font-size: 13px;
-  }
-  .suggestions small {
-    font-size: 10px;
   }
   .home-bottom {
     grid-template-columns: 1fr;
